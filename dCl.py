@@ -130,49 +130,49 @@ class Cl_kSZ2_HI2():
         # Contribution originate from each term in Wick Theorem
         # Term 5 
         dCl = - tc.cos(theta_l1_p_l2 - t2) # - (l_dot_l2 + l2square) / l_p_l2_norm / l2
-        dCl *= self.Cross_Power(z, l1_p_l2_norm / chi, 'e', 'e')
-        dCl *= self.Cross_Power(z, l_p_l2_norm / chi, 'v', 'HI')
-        dCl *= self.Cross_Power(z, l2 / chi, 'v', 'HI')
+        dCl *= self.Cross_Power(z, l1_p_l2_norm, 'e', 'e')
+        dCl *= self.Cross_Power(z, l_p_l2_norm, 'v', 'HI')
+        dCl *= self.Cross_Power(z, l2, 'v', 'HI')
         dCl_tot += dCl
         # Term 6 
         dCl = - tc.cos(theta_l1_p_l2 - t2) # - (l_dot_l2 + l2square) / l_p_l2_norm / l2
-        dCl *= self.Cross_Power(z, l_m_l1_p_l2_norm / chi, 'e', 'e')
-        dCl *= self.Cross_Power(z, l_p_l2_norm / chi, 'v', 'HI')
-        dCl *= self.Cross_Power(z, l2 / chi, 'v', 'HI')
+        dCl *= self.Cross_Power(z, l_m_l1_p_l2_norm, 'e', 'e')
+        dCl *= self.Cross_Power(z, l_p_l2_norm, 'v', 'HI')
+        dCl *= self.Cross_Power(z, l2, 'v', 'HI')
         dCl_tot += dCl
         # Term 8 
         dCl = tc.cos(theta_l_p_l2 - theta_l1_p_l2) # (l_dot_l1 + l_dot_l2 + l1_dot_l2 + l2square) / l_p_l2_norm / l1_p_l2_norm
-        dCl *= self.Cross_Power(z, l_m_l1_p_l2_norm / chi, 'e', 'v')
-        dCl *= self.Cross_Power(z, l_p_l2_norm / chi, 'e', 'HI')
-        dCl *= self.Cross_Power(z, l2 / chi, 'v', 'HI')
+        dCl *= self.Cross_Power(z, l_m_l1_p_l2_norm, 'e', 'v')
+        dCl *= self.Cross_Power(z, l_p_l2_norm, 'e', 'HI')
+        dCl *= self.Cross_Power(z, l2, 'v', 'HI')
         dCl_tot += dCl
         # Term 9
         dCl = tc.cos(theta_l_m_l1_p_l2 - t2) # (l_dot_l2 - l1_dot_l2 + l2square) / l_m_l1_p_l2_norm / l2
-        dCl *= self.Cross_Power(z, l1_p_l2_norm / chi, 'e', 'v')
-        dCl *= self.Cross_Power(z, l2 / chi, 'e', 'HI')
-        dCl *= self.Cross_Power(z, l_p_l2_norm / chi, 'v', 'HI')
+        dCl *= self.Cross_Power(z, l1_p_l2_norm, 'e', 'v')
+        dCl *= self.Cross_Power(z, l2, 'e', 'HI')
+        dCl *= self.Cross_Power(z, l_p_l2_norm, 'v', 'HI')
         dCl_tot += dCl
         # Term 10
         dCl = tc.cos(theta_l1_p_l2 - t2)# (l1_dot_l2 + l2square) / l1_p_l2_norm / l2
-        dCl *= self.Cross_Power(z, l_p_l2_norm / chi, 'e', 'HI')
-        dCl *= self.Cross_Power(z, l1_p_l2_norm / chi, 'e', 'v')
-        dCl *= self.Cross_Power(z, l2 / chi, 'v', 'HI')
+        dCl *= self.Cross_Power(z, l_p_l2_norm, 'e', 'HI')
+        dCl *= self.Cross_Power(z, l1_p_l2_norm, 'e', 'v')
+        dCl *= self.Cross_Power(z, l2, 'v', 'HI')
         dCl_tot += dCl
         # Term 11
-        dCl *= - self.Cross_Power(z, l_p_l2_norm / chi, 'e', 'HI')
-        dCl *= self.Cross_Power(z, l1_p_l2_norm / chi, 'v', 'v')
-        dCl *= self.Cross_Power(z, l2 / chi, 'e', 'HI')
+        dCl *= - self.Cross_Power(z, l_p_l2_norm, 'e', 'HI')
+        dCl *= self.Cross_Power(z, l1_p_l2_norm, 'v', 'v')
+        dCl *= self.Cross_Power(z, l2, 'e', 'HI')
         dCl_tot += dCl
         # Term 13
         dCl = tc.cos(theta_l_m_l1_p_l2 - theta_l_p_l2) # (lsquare + l2square + 2*l_dot_l2 - l_dot_l1 - l1_dot_l2) / l_p_l2_norm / l_m_l1_p_l2_norm
-        dCl *= self.Cross_Power(z, l2 / chi, 'e', 'HI')
-        dCl *= self.Cross_Power(z, l_m_l1_p_l2_norm / chi, 'e', 'v')
-        dCl *= self.Cross_Power(z, l1_p_l2_norm / chi, 'v', 'HI')
+        dCl *= self.Cross_Power(z, l2, 'e', 'HI')
+        dCl *= self.Cross_Power(z, l_m_l1_p_l2_norm, 'e', 'v')
+        dCl *= self.Cross_Power(z, l1_p_l2_norm, 'v', 'HI')
         dCl_tot += dCl
         # Term 14
-        dCl *= - self.Cross_Power(z, l2 / chi, 'e', 'HI')
-        dCl *= self.Cross_Power(z, l_m_l1_p_l2_norm / chi, 'v', 'v')
-        dCl *= self.Cross_Power(z, l1_p_l2_norm / chi, 'e', 'HI')
+        dCl *= - self.Cross_Power(z, l2, 'e', 'HI')
+        dCl *= self.Cross_Power(z, l_m_l1_p_l2_norm, 'v', 'v')
+        dCl *= self.Cross_Power(z, l1_p_l2_norm, 'e', 'HI')
         dCl_tot += dCl
 
         # The Beam Function
@@ -202,22 +202,53 @@ class Cl_kSZ2_HI2():
     def Beam_HI(self, l, singma_HI):
         return tc.exp(-l**2 * singma_HI**2 / 2)
 
-    def Cross_Power(self, z, kh, b1, b2):
+    # def Cross_Power(self, z, kh, b1, b2):
     
+    #     if b1 not in ['e', 'v', 'HI'] or b2 not in ['e', 'v', 'HI']:
+    #         print('b1 and b2 must be "e", "v" or "HI"')
+    #         raise
+    #     else:
+    #         if b1 == 'e': B1 = self.bias_electron(kh, z)
+    #         elif b1 == 'v': B1 = self.bias_velocity(kh, z)
+    #         elif b1 == 'HI': B1 = self.bias_HI(kh, z)
+
+    #         if b2 == 'e': B2 = self.bias_electron(kh, z)
+    #         elif b2 == 'v': B2 = self.bias_velocity(kh, z)
+    #         elif b2 == 'HI': B2 = self.bias_HI(kh, z)
+
+    #     shape = kh.shape
+    #     P =  B1 * B2 * (self.Pm_interpolation(kh.flatten(), z)).reshape(shape)
+    #     return P
+
+    def Cross_Power(self, z, L, b1, b2, cut_off= tc.tensor([2.])):
+        
+        chi = self.chi(z)
+        kh = L / chi
+        kh_cutoff = cut_off / chi
+        shape = kh.shape
+
         if b1 not in ['e', 'v', 'HI'] or b2 not in ['e', 'v', 'HI']:
             print('b1 and b2 must be "e", "v" or "HI"')
             raise
         else:
-            if b1 == 'e': B1 = self.bias_electron(kh, z)
-            elif b1 == 'v': B1 = self.bias_velocity(kh, z)
-            elif b1 == 'HI': B1 = self.bias_HI(kh, z)
+            if b1 == 'e': B1 = self.bias_electron
+            elif b1 == 'v': B1 = self.bias_velocity
+            elif b1 == 'HI': B1 = self.bias_HI
 
-            if b2 == 'e': B2 = self.bias_electron(kh, z)
-            elif b2 == 'v': B2 = self.bias_velocity(kh, z)
-            elif b2 == 'HI': B2 = self.bias_HI(kh, z)
+            if b2 == 'e': B2 = self.bias_electron
+            elif b2 == 'v': B2 = self.bias_velocity
+            elif b2 == 'HI': B2 = self.bias_HI
 
-        shape = kh.shape
-        P =  B1 * B2 * (self.Pm_interpolation(kh.flatten(), z)).reshape(shape)
+        mesh = tc.where(L <= cut_off)
+        P = (self.Pm_interpolation(kh.flatten().clone().detach(), tc.tensor([z]))).reshape(shape) * B1(kh, z) * B2(kh, z)
+
+        if b1=='v' and b2=='v' :
+            P[mesh] = 2. * self.Pm_interpolation(kh_cutoff, tc.tensor([z])) * B1(kh_cutoff, z) * B2(kh_cutoff, z)
+        elif b1=='v' or b2=='v' :
+            P[mesh] = self.Pm_interpolation(kh_cutoff, tc.tensor([z])) * B1(kh_cutoff, z) * B2(kh_cutoff, z)
+        else:
+            P[mesh] = 2./3. * self.Pm_interpolation(kh_cutoff, tc.tensor([z])) * B1(kh_cutoff, z) * B2(kh_cutoff, z)
+
         return P
     
     def bias_electron(self, kh, z): # TO BE REVISED
