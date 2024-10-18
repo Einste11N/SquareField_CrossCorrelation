@@ -42,6 +42,7 @@ class Cl_kSZ2_HI2():
         self.z_list = z             # Total redshift array that we are interested in
         self.z_array = tc.tensor(z)
         self.Pm = tc.tensor(Pm)     # Matter power spectrum
+        self.Pm = tc.tensor(Pm)     # Matter power spectrum
 
         # Functions of redshift
         self.H_of_z = tc.tensor(backgrounds.hubble_parameter(z)) / sc.c     # Hubble parameter over c, in unit h/Mpc
