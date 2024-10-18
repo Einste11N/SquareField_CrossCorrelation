@@ -7,6 +7,8 @@ from scipy.interpolate import interp1d
 import camb
 from copy import deepcopy
 
+import time
+
 
 class Cl_kSZ2_HI2():
 
