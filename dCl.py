@@ -1,5 +1,5 @@
 import torch as tc
-tc.set_default_tensor_type(tc.DoubleTensor)
+tc.set_default_dtype(tc.float64)
 
 import numpy as np
 import scipy.constants as sc
@@ -40,15 +40,18 @@ class Cl_kSZ2_HI2():
         if len(z)<=5 : itp_order = 'linear'
         else: itp_order = 'cubic'
 
-        # Interpolation functions of z, 
-        # taking in list, numpy.ndarray or torch.tensorin returning to numpy.ndarray
+        # Interpolation functions of z
         self.H_of_z = backgrounds.hubble_parameter                  # Hubble parameter, in unit 
         self.f_of_z = self.Growth_Rate_of_z(backgrounds, itp_order) # Logarithmic growth rate
         self.Xe = interp1d(z_array, Xe_of_z, kind = itp_order)      # Ionized franction Xe
         self.chi = interp1d(z_array, chi_of_z, kind = itp_order)    # Comoving distance chi
 
         # interpolation functions of k and z
-        self.Pm = tc.tensor(Pm)                                     # Matter power spectrum
+        self.Pm = tc.tensor(Pm) # interp2d_torch(kh, z, Pm)             # Matter power spectrum
+
+        # save the cosmological model, for checking the result
+        self.results = results
+        self.BGEvolution = backgrounds
         
     def Growth_Rate_of_z(self, backgrounds, itp_order):
         '''
@@ -56,11 +59,11 @@ class Cl_kSZ2_HI2():
         defined as f:=d(ln D)/d(ln a)
         '''
         # Since the growth rate almost does not vary with momentum scale, we fix kh=0.01 to get f
-        f_of_z = backgrounds.get_redshift_evolution([0.01], self.z_array.tolist(), ['growth'])
-        return interp1d(self.z_array, f_of_z.flatten(), kind = itp_order)
+        f_of_z = backgrounds.get_redshift_evolution([0.01], self.z_list, ['growth'])
+        return interp1d(self.z_list, np.array(f_of_z).flatten(), kind = itp_order)
 
-    def Pm_interpolation(self, kh_array, z_array):
-        return interp2d_torch(self.kh_array, self.z_array, self.Pm, kh_array, z_array)
+    def Pm_interpolation(self, x, y, Mode='bilinear'):
+        return interp2d_torch(self.kh_array, self.z_array, self.Pm, x, y, mode=Mode)
 
 
     def dCl(self, z, l, l1, l_min = 1, l_max = 1000, N_l = 1000, N_theta = 81):
@@ -87,33 +90,34 @@ class Cl_kSZ2_HI2():
         l1 = tc.tensor([l1], dtype=tc.float64)
 
         # Make the mesh grid for theta_1, |l_2|, and theta_2
-        t1_list = tc.arange(N_theta, dtype=tc.float64) * 2 * tc.pi / N_theta
+        t1_list = tc.arange(N_theta, dtype=tc.float64) * tc.pi / N_theta
         t2_list = deepcopy(t1_list)
         l2_list = tc.linspace(l_min, l_max, N_l, dtype=tc.float64)
-        t1, l2, t2 = tc.meshgrid(t1_list, t2_list, l2_list, indexing='ij')
+        l2, t1, t2 = tc.meshgrid(l2_list, t1_list, t2_list, indexing='ij')
+
+        # # Make the mesh grid for theta_1, |l_2|, and theta_2
+        # t1 = tc.tensor([tc.pi / 3.], dtype=tc.float64)
+        # t2_list = tc.arange(N_theta, dtype=tc.float64) * 2 * tc.pi / N_theta
+        # l2_list = tc.linspace(l_min, l_max, N_l, dtype=tc.float64) # 10**tc.linspace(np.log10(l_min), np.log10(l_max), N_l, dtype=tc.float64)
+        # l2, t2 = tc.meshgrid(l2_list, t2_list, indexing='ij')
 
         # Pre-define useful varibales and constants
-        chi = self.chi(z)
         lsquare = l**2
         l1square = l1**2
         l2square = l2**2
 
-        l_dot_l1 = Polar_dot(l, 0, l1, t1)
-        l_dot_l2 = Polar_dot(l, 0, l2, t2)
-        l1_dot_l2 = Polar_dot(l1, l2, t2, t2)
+        l_dot_l1 = Polar_dot(l, 0., l1, t1)
+        l_dot_l2 = Polar_dot(l, 0., l2, t2)
+        l1_dot_l2 = Polar_dot(l1, t1, l2, t2)
 
         l_m_l1_norm = tc.sqrt( lsquare + l1square - 2*l_dot_l1 )
         l_p_l2_norm = tc.sqrt( lsquare + l2square + 2*l_dot_l2 )
         l1_p_l2_norm = tc.sqrt( l1square + l2square + 2*l1_dot_l2 )
         l_m_l1_p_l2_norm = tc.sqrt( lsquare + l1square + l2square - 2*l_dot_l1 + 2*l_dot_l2 - 2*l1_dot_l2 )
 
-        del(l_dot_l1)
-        del(l_dot_l2)
-        del(l1_dot_l2)
-
-        theta_l_p_l2 = Evaluate_angle(2, l, 0, l2, t2)
-        theta_l1_p_l2 = Evaluate_angle(2, l, 0, l2, t2)
-        theta_l_m_l1_p_l2 = Evaluate_angle(3, l, 0, -l1, t1, l2, t2)
+        theta_l_p_l2 = Evaluate_angle(2, l, tc.tensor([0.]), l2, t2)
+        theta_l1_p_l2 = Evaluate_angle(2, l, tc.tensor([0.]), l2, t2)
+        theta_l_m_l1_p_l2 = Evaluate_angle(3, l, tc.tensor([0.]), -l1, t1, l2, t2)
 
 
         Z_MEAN = 0.45 # mean redshift for HI observation
@@ -123,9 +127,8 @@ class Cl_kSZ2_HI2():
 
         ##################################################
         # Evaluate the integrand
-
         # Initialization
-        dCl_tot = tc.empty_like(t2)
+        dCl_tot = tc.zeros_like(t2)
 
         # Contribution originate from each term in Wick Theorem
         # Term 5 
@@ -159,7 +162,8 @@ class Cl_kSZ2_HI2():
         dCl *= self.Cross_Power(z, l2, 'v', 'HI')
         dCl_tot += dCl
         # Term 11
-        dCl *= - self.Cross_Power(z, l_p_l2_norm, 'e', 'HI')
+        dCl = -1.
+        dCl *= self.Cross_Power(z, l_p_l2_norm, 'e', 'HI')
         dCl *= self.Cross_Power(z, l1_p_l2_norm, 'v', 'v')
         dCl *= self.Cross_Power(z, l2, 'e', 'HI')
         dCl_tot += dCl
@@ -170,55 +174,36 @@ class Cl_kSZ2_HI2():
         dCl *= self.Cross_Power(z, l1_p_l2_norm, 'v', 'HI')
         dCl_tot += dCl
         # Term 14
-        dCl *= - self.Cross_Power(z, l2, 'e', 'HI')
+        dCl = -1.
+        dCl = self.Cross_Power(z, l2, 'e', 'HI')
         dCl *= self.Cross_Power(z, l_m_l1_p_l2_norm, 'v', 'v')
         dCl *= self.Cross_Power(z, l1_p_l2_norm, 'e', 'HI')
         dCl_tot += dCl
 
-        # The Beam Function
+        # The beam functions
         dCl_tot *= self.Beam_kSZ(l_m_l1_norm, SIGMA_KSZ) * self.Beam_kSZ(l1, SIGMA_KSZ) * self.Beam_HI(l_p_l2_norm, SIGMA_HI) * self.Beam_HI(l2, SIGMA_HI)
-
-        # The window functions
+        # The window functions and the metric determinant contribution 
         dCl_tot *= l1 * l2 * self.F_kSZ(z)**2 * self.G_HI(z)**2 * self.dchi_by_dz(z)
 
-        dCl_res = tc.sum(dCl_tot) * t1_list[1] * (l_max - l_min) / (N_l - 1)
+        dCl_res = tc.sum(dCl_tot) * t2_list[1] * (l_max - l_min) / (N_l - 1)
 
         return dCl_res
     
 
-
     def dchi_by_dz(self, z):
-        return sc.c / tc.tensor(self.H_of_z(z))
+        return sc.c / self.H_of_z(z)
 
     def F_kSZ(self, z):
         return tc.tensor(self.Xe(z)) * (1+z)**2 / tc.tensor(self.chi(z))**2
     
     def G_HI(self, z):
-        return 1 / (self.z_list[-1] - self.z_list[0]) / tc.tensor(self.chi(z))**2
+        return 1 / (self.z_list[-1] - self.z_list[0]) / self.chi(z)**2
 
     def Beam_kSZ(self, l, singma_kSZ):
         return tc.exp(-l**2 * singma_kSZ**2 / 2)
     
     def Beam_HI(self, l, singma_HI):
         return tc.exp(-l**2 * singma_HI**2 / 2)
-
-    # def Cross_Power(self, z, kh, b1, b2):
-    
-    #     if b1 not in ['e', 'v', 'HI'] or b2 not in ['e', 'v', 'HI']:
-    #         print('b1 and b2 must be "e", "v" or "HI"')
-    #         raise
-    #     else:
-    #         if b1 == 'e': B1 = self.bias_electron(kh, z)
-    #         elif b1 == 'v': B1 = self.bias_velocity(kh, z)
-    #         elif b1 == 'HI': B1 = self.bias_HI(kh, z)
-
-    #         if b2 == 'e': B2 = self.bias_electron(kh, z)
-    #         elif b2 == 'v': B2 = self.bias_velocity(kh, z)
-    #         elif b2 == 'HI': B2 = self.bias_HI(kh, z)
-
-    #     shape = kh.shape
-    #     P =  B1 * B2 * (self.Pm_interpolation(kh.flatten(), z)).reshape(shape)
-    #     return P
 
     def Cross_Power(self, z, L, b1, b2, cut_off= tc.tensor([2.])):
         
@@ -250,37 +235,46 @@ class Cl_kSZ2_HI2():
             P[mesh] = 2./3. * self.Pm_interpolation(kh_cutoff, tc.tensor([z])) * B1(kh_cutoff, z) * B2(kh_cutoff, z)
 
         return P
-    
+
+
     def bias_electron(self, kh, z): # TO BE REVISED
         return kh/kh
     
     def bias_velocity(self, kh, z):
-        b = 1/(1+z) * tc.tensor(self.H_of_z(z)) * tc.tensor(self.f_of_z(z)) / kh
+        b = 1/(1+z) * self.H_of_z(z) * self.f_of_z(z) / kh
         return b
     
     def bias_HI(self, kh, z): # TO BE REVISED
         return kh/kh
     
-
+    
 
 
 def Polar_dot(lx, thetax, ly, thetay):
     return lx * ly * np.cos(thetax - thetay)
 
 def Evaluate_angle(N_vec, *vectors):
-    
+
     if 2*N_vec != len(vectors):
         print('The input N_vec does not match the number of input vectors')
         raise
     else:
+        # We need to do some adjustment on vectors to match the broadcast rule
+        # In order to keep vectors unchanged, make a copy of them for calculation
+        vec = deepcopy(vectors)
+
         l_x = 0.
         l_y = 0.
         for i in range(N_vec):
-            l_x = l_x + vectors[2*i] * np.cos(vectors[2*i+1])
-            l_y = l_y + vectors[2*i] * np.sin(vectors[2*i+1])
+            # if len(vectors[2*i]) == 1: vec[2*i] = np.array(vectors[2*i])
+            # if len(vectors[2*i+1]) == 1: vec[2*i+1] = np.array(vectors[2*i+1])
+            # print('shape1', vec[2*i].shape, '   shape2', vec[2*i+1].shape, '   shape3', np.cos(vec[2*i+1]).shape)
+            l_x = l_x + vec[2*i] * np.cos(vec[2*i+1])
+            l_y = l_y + vec[2*i] * np.sin(vec[2*i+1])
+            # print(l_x.shape, '   ', l_y.shape)
         
-        return np.arctan2(l_y, l_x)  
-
+        return np.arctan2(l_y, l_x)
+    
 def interp2d_torch(x, y, z, x_new, y_new, mode='bilinear'):
     '''
     Interpolates 2D data over a grid using PyTorch, mimicking `scipy.interpolate.interp2d`.
@@ -298,8 +292,7 @@ def interp2d_torch(x, y, z, x_new, y_new, mode='bilinear'):
     '''
     
     # Ensure the input tensors are of the correct shape
-    # x = x.float()
-    # y = y.float()
+
     z = z.unsqueeze(0).unsqueeze(0)  # Add batch and channel dimensions (1, 1, M, N)
     
     # Create the meshgrid for new points (x_new, y_new)
@@ -320,4 +313,3 @@ def interp2d_torch(x, y, z, x_new, y_new, mode='bilinear'):
     
     # Remove the batch and channel dimensions and return the result
     return interpolated.squeeze()
-
