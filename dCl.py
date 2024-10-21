@@ -30,12 +30,6 @@ class Cl_kSZ2_HI2():
         ##################################################
         # Store the variables that we are interested in
 
-        # Instruments' properties
-        Z_MEAN = 0.45 # mean redshift for HI observation
-        FREQ_HI = 1420. # in unit MHz
-        self.SIGMA_HI = 0.0115 * 1000. * (1. + Z_MEAN) / FREQ_HI
-        self.SIGMA_KSZ = deepcopy(self.SIGMA_HI)
-
         # Constant scalars and arrays
         self.TCMB = params.TCMB     # CMB temperature 2.7K
         self.Tb = Tb                # HI brightness temperature, in unite mK
@@ -60,12 +54,19 @@ class Cl_kSZ2_HI2():
         self.results = results
         self.BGEvolution = backgrounds
 
+        # Instruments' properties
+        Z_MEAN = 0.45 # mean redshift for HI observation
+        FREQ_HI = 1420. # in unit MHz
+        self.SIGMA_HI = 0.0115 * 1000. * (1. + self.z_array) / FREQ_HI
+        self.SIGMA_KSZ = deepcopy(self.SIGMA_HI)
+        self.SIGMA_HI_MEAN = 0.0115 * 1000. * (1. + Z_MEAN) / FREQ_HI
+        self.SIGMA_KSZ_MEAN = deepcopy(self.SIGMA_HI_MEAN)
+
         # Arrays used for matter power spectrum interpolation
         # adding infrared asymptotic behavior (P proportional to k)
         self.kh_array_itp, self.Pm_itp = self.Infrared_cutoff()
 
-
-    def Infrared_cutoff(self, N_add = 5, cut_off = tc.tensor([1.e-6])):
+    def Infrared_cutoff(self, N_add = 5, cut_off = tc.tensor([1.e-8])):
         kh = self.kh_list
         z = self.z_list
         Pm = self.Pm
@@ -92,11 +93,17 @@ class Cl_kSZ2_HI2():
     def Power_matter_1d(self, kh, zindex):
         return torch_interp1d(self.kh_array_itp, (self.Pm_itp)[zindex], kh)
 
-    def Beam_kSZ(self, l, zindex):
-        return tc.exp(-l**2 * self.SIGMA_KSZ**2 / 2)
+    def Beam_kSZ(self, l, zindex=0, use_mean = False):
+        if use_mean:
+            return tc.exp(-l**2 * self.SIGMA_KSZ_MEAN**2 / 2)
+        else:
+            return tc.exp(-l**2 * self.SIGMA_KSZ[zindex]**2 / 2)
     
-    def Beam_HI(self, l, zindex):
-        return tc.exp(-l**2 * self.SIGMA_HI**2 / 2)
+    def Beam_HI(self, l, zindex=0, use_mean = False):
+        if use_mean:
+            return tc.exp(-l**2 * self.SIGMA_HI_MEAN**2 / 2)
+        else:
+            return tc.exp(-l**2 * self.SIGMA_HI[zindex]**2 / 2)
 
     def bias_electron(self, kh, zindex): # TO BE REVISED
         return kh/kh
@@ -104,14 +111,19 @@ class Cl_kSZ2_HI2():
     def bias_HI(self, kh, zindex): # TO BE REVISED
         return kh/kh
     
-    def bias_velocity(self, kh, zindex, cut_off = tc.tensor([1e-6], dtype=tc.float64)):
+    def bias_velocity(self, kh, zindex, cut_off = tc.tensor([1.e-8])):
         z_dependence = 1/(1+self.z_array[zindex]) * self.H_of_z[zindex] * self.f_of_z[zindex]
         # cut off the divergence at infrared
         return tc.where(kh > cut_off, z_dependence / kh, z_dependence / cut_off)
-    
+       
+    def integral_over_z(self, dCl_tot):
+        # The window functions
+        dCl_tot *= self.F_kSZ**2 * self.G_HI**2 * self.dchi_by_dz
+        dCl_res = tc.trapz(dCl_tot, self.z_array, dim=-1)
+        return dCl_res
 
-    
-    def dCl_l1(self, zi, l, l1, l_min = 1, l_max = 800, N_l = 1600, N_theta = 243, debug=False):
+
+    def dCl_l1(self, zi, l, l1, l_min = 1, l_max = 800, N_l = 1600, N_theta = 900, dim=3, theta = tc.pi / 2.):
         """Evaluare the integrand, dCl, as a function of z, l and l_1.
 
         Here we sum over theta_1, l_2, and theta_2. To get the final C_l result, one has to integrate dCl over chi and l_1, for a given l.
@@ -130,14 +142,23 @@ class Cl_kSZ2_HI2():
         """
         ##################################################
         # Redefine the inputs as tc.tensors
-        l = tc.tensor([l], dtype=tc.float64)
-        l1 = tc.tensor([l1], dtype=tc.float64)
+        l = tc.tensor([l])
+        l1 = tc.tensor([l1])
 
         # Make the mesh grid for theta_1, |l_2|, and theta_2
-        t1_list = tc.arange(N_theta, dtype=tc.float64) * tc.pi / N_theta
-        t2_list = deepcopy(t1_list)
-        l2_list = tc.linspace(l_min, l_max, N_l, dtype=tc.float64)
-        l2, t1, t2 = tc.meshgrid(l2_list, t1_list, t2_list, indexing='ij')
+        t2_list = tc.arange(N_theta + 1) * 2 * tc.pi / N_theta
+        l2_list = tc.hstack([tc.linspace(1e-4, l_min, 11)[:-1], tc.linspace(l_min, l_max, N_l)])
+
+        if dim==3:
+            t1_list = tc.linspace(0, tc.pi, N_theta//2 + 1)
+            t1, l2, t2 = tc.meshgrid(t1_list, l2_list, t2_list, indexing='ij')
+        elif dim==2:
+            t1 = tc.tensor([theta])
+            l2, t2 = tc.meshgrid(l2_list, t2_list, indexing='ij')
+        else:
+            print('dim can only be 3(default) or 2 by now')
+            raise
+
 
         # Pre-define useful varibales and constants
         chi = self.chi_of_z[zi]
@@ -175,38 +196,27 @@ class Cl_kSZ2_HI2():
 
         # Contribution originate from each term in Wick Theorem
         # Term 5 and Term 6
-        dCl = - tc.cos(theta_l1_p_l2 - t2)
+        dCl = - tc.cos(theta_l_p_l2 - t2)
         dCl *= P_l1_p_l2_norm * self.bias_electron(k_l1_p_l2_norm,zi)**2 + P_l_m_l1_p_l2_norm * self.bias_electron(k_l_m_l1_p_l2_norm,zi)**2
         dCl *= P_l_p_l2_norm        * self.bias_velocity(k_l_p_l2_norm,zi)      * self.bias_HI(k_l_p_l2_norm,zi)
         dCl *= P_l2                 * self.bias_velocity(k_l2,zi)               * self.bias_HI(k_l2,zi)
         dCl_tot += dCl
         # Term 8 and Term 10
         dCl = tc.cos(theta_l_p_l2 - theta_l1_p_l2) * P_l_m_l1_p_l2_norm \
-                * self.bias_electron(k_l_m_l1_p_l2_norm,zi) * self.bias_velocity(k_l_m_l1_p_l2_norm,zi)
+                                    * self.bias_electron(k_l_m_l1_p_l2_norm,zi) * self.bias_velocity(k_l_m_l1_p_l2_norm,zi)
         dCl += tc.cos(theta_l1_p_l2 - t2) * P_l1_p_l2_norm \
-                * self.bias_electron(k_l1_p_l2_norm,zi) * self.bias_velocity(k_l1_p_l2_norm,zi)
+                                    * self.bias_electron(k_l1_p_l2_norm,zi)     * self.bias_velocity(k_l1_p_l2_norm,zi)
         dCl *= P_l_p_l2_norm        * self.bias_electron(k_l_p_l2_norm,zi)      * self.bias_HI(k_l_p_l2_norm,zi)
         dCl *= P_l2                 * self.bias_velocity(k_l2,zi)               * self.bias_HI(k_l2,zi)
         dCl_tot += dCl
         # Term 9 and Term 13
         dCl = tc.cos(theta_l_m_l1_p_l2 - t2) * P_l1_p_l2_norm \
-                * self.bias_electron(k_l1_p_l2_norm,zi) * self.bias_velocity(k_l1_p_l2_norm,zi)
-        dCl += tc.cos(theta_l_m_l1_p_l2 - theta_l_p_l2) * P_l_m_l1_p_l2_norm * self.bias_electron(k_l_m_l1_p_l2_norm,zi) * self.bias_velocity(k_l_m_l1_p_l2_norm,zi)
+                                    * self.bias_electron(k_l1_p_l2_norm,zi)     * self.bias_velocity(k_l1_p_l2_norm,zi)
+        dCl += tc.cos(theta_l_m_l1_p_l2 - theta_l_p_l2) * P_l_m_l1_p_l2_norm \
+                                    * self.bias_electron(k_l_m_l1_p_l2_norm,zi) * self.bias_velocity(k_l_m_l1_p_l2_norm,zi)
         dCl *= P_l_p_l2_norm        * self.bias_velocity(k_l_p_l2_norm,zi)      * self.bias_HI(k_l_p_l2_norm,zi)
         dCl *= P_l2                 * self.bias_electron(k_l2,zi)               * self.bias_HI(k_l2,zi)
         dCl_tot += dCl 
-        # # Term 11
-        # dCl = -1.
-        # dCl *= P_l_p_l2_norm        * self.bias_electron(k_l_p_l2_norm,zi)      * self.bias_HI(k_l_p_l2_norm,zi)
-        # dCl *= P_l1_p_l2_norm       * self.bias_velocity(k_l1_p_l2_norm,zi)     * self.bias_velocity(k_l1_p_l2_norm,zi)
-        # dCl *= P_l2                 * self.bias_electron(k_l2,zi)               * self.bias_HI(k_l2,zi)
-        # dCl_tot += dCl
-        # # Term 14
-        # dCl = -1.
-        # dCl *= P_l2                 * self.bias_electron(k_l2,zi)               * self.bias_HI(k_l2,zi)
-        # dCl *= P_l_m_l1_p_l2_norm   * self.bias_velocity(k_l_m_l1_p_l2_norm,zi) * self.bias_velocity(k_l_m_l1_p_l2_norm,zi)
-        # dCl *= P_l1_p_l2_norm       * self.bias_electron(k_l1_p_l2_norm,zi)     * self.bias_HI(k_l1_p_l2_norm,zi)
-        # dCl_tot += dCl
 
         # Delete redundant variables to save memory
         del(P_l1_p_l2_norm, P_l_p_l2_norm, P_l2, P_l_m_l1_p_l2_norm, theta_l_p_l2, theta_l1_p_l2, theta_l_m_l1_p_l2)
@@ -216,24 +226,31 @@ class Cl_kSZ2_HI2():
         l_p_l2_norm = tc.sqrt( lsquare + l2square + 2*l_dot_l2 )
         dCl_tot *= self.Beam_kSZ(l_m_l1_norm,zi) * self.Beam_kSZ(l1,zi) * self.Beam_HI(l_p_l2_norm,zi) * self.Beam_HI(l2,zi) * l1 * l2
 
-        if debug:
-            dCl_res = tc.sum(dCl_tot) * t2_list[1] * (l_max - l_min) / (N_l - 1)
-            return dCl_res
+        dCl_res = tc.trapz(tc.trapz(dCl, t2_list, dim=-1), l2_list, dim=-1)
 
-        return dCl_tot
+        return dCl_res
     
-    def dCl_lm_Term11(self, zi, l, lm, l_min = 1, l_max = 800, N_l = 1600, N_theta = 243, debug=False):
+    def dCl_lm_Term11(self, zi, l, lm, l_min = 1, l_max = 800, N_l = 1600, N_theta = 240, dim=3, theta = tc.pi / 2.):
         '''
         Integrand for Term 11, with parameter redefine ``lp = (l2 + l1) / 2``, and ``lm = (l2 - l1) / 2``
         '''
-        l = tc.tensor([l], dtype=tc.float64)
-        lm = tc.tensor([lm], dtype=tc.float64)
+        l = tc.tensor([l])
+        lm = tc.tensor([lm])
 
         # Make the mesh grid for theta_1, |l_2|, and theta_2
-        tm_list = tc.arange(N_theta, dtype=tc.float64) * tc.pi / N_theta
-        tp_list = deepcopy(tm_list)
-        lp_list = tc.linspace(l_min, l_max, N_l, dtype=tc.float64)
-        lp, tm, tp = tc.meshgrid(lp_list, tm_list, tp_list, indexing='ij')
+        tp_list = tc.arange(N_theta + 1) * 2 * tc.pi / N_theta
+        lp_list = tc.hstack([(10**tc.linspace(-4, np.log10(l_min), 31))[:-1], tc.linspace(l_min, l_max, N_l)])
+
+        if dim==3:
+            tm_list = tc.linspace(0, tc.pi, N_theta//2 + 1)
+            tm, lp, tp = tc.meshgrid(tm_list, lp_list, tp_list, indexing='ij')
+        elif dim==2:
+            tm = tc.tensor([theta])
+            lp, tp = tc.meshgrid(lp_list, tp_list, indexing='ij')
+        else:
+            print('dim can only be 3(default) or 2 by now')
+            raise
+
 
         # Pre-define useful varibales and constants
         chi = self.chi_of_z[zi]
@@ -268,29 +285,35 @@ class Cl_kSZ2_HI2():
         dCl *= P_2lp * self.bias_velocity(k_2lp, zi)**2
 
         # Delete redundant variables to save memory
-        del(k_l_p_lm_p_lp_norm, k_lm_p_lp_norm, k_lp)
+        del(k_l_p_lm_p_lp_norm, k_lm_p_lp_norm, k_2lp)
 
         # The beam functions and the metric determinant contribution
         dCl *= self.Beam_kSZ(l_m_lp_p_lm_norm) * self.Beam_kSZ(lp_m_lm_norm) * self.Beam_HI(l_p_lm_p_lp_norm) * self.Beam_HI(lp_p_lm_norm) * lm * lp * 4
 
-        if debug:
-            dCl_res = tc.sum(dCl) * tp_list[1] * (l_max - l_min) / (N_l - 1)
-            return dCl_res
+        dCl_res = tc.trapz(tc.trapz(dCl, tp_list, dim=-1), lp_list, dim=-1)
 
-        return dCl
+        return dCl_res
 
-    def dCl_lp_Term14(self, zi, l, lp, l_min = 1, l_max = 800, N_l = 1600, N_theta = 243, debug=False):
+    def dCl_lp_Term14(self, zi, l, lp, l_min = 1, l_max = 800, N_l = 1600, N_theta = 240, dim=3, theta = tc.pi / 2.):
         '''
         Integrand for Term 14, with parameter redefine ``lp = (l2 + l1) / 2``, and ``Lm = (l - l1 + l2) / 2 = l / 2 + lm``
         '''
-        l = tc.tensor([l], dtype=tc.float64)
-        lp = tc.tensor([lp], dtype=tc.float64)
+        l = tc.tensor([l])
+        lp = tc.tensor([lp])
 
         # Make the mesh grid for theta_1, |l_2|, and theta_2
-        tp_list = tc.arange(N_theta, dtype=tc.float64) * tc.pi / N_theta
-        Tm_list = deepcopy(Tm_list)
-        Lm_list = tc.linspace(l_min, l_max, N_l, dtype=tc.float64)
-        Lm, tp, Tm = tc.meshgrid(Lm_list, tp_list, Tm_list, indexing='ij')
+        Tm_list = tc.arange(N_theta + 1) * 2 * tc.pi / N_theta
+        Lm_list = tc.hstack([(10**tc.linspace(-4, np.log10(l_min), 31))[:-1], tc.linspace(l_min, l_max, N_l)])
+
+        if dim==3:
+            tp_list = tc.linspace(0, tc.pi, N_theta//2 + 4)
+            tp, Lm, Tm = tc.meshgrid(tp_list, Lm_list, Tm_list, indexing='ij')
+        elif dim==2:
+            tp = tc.tensor([theta])
+            Lm, Tm = tc.meshgrid(Lm_list, Tm_list, indexing='ij')
+        else:
+            print('dim can only be 3(default) or 2 by now')
+            raise
 
         # Pre-define useful varibales and constants
         chi = self.chi_of_z[zi]
@@ -302,10 +325,10 @@ class Cl_kSZ2_HI2():
         l_dot_Lm = Polar_dot(l, 0., Lm, Tm)
         lp_dot_Lm = Polar_dot(lp, tp, Lm, Tm)
 
-        l_m_lp_p_lm_norm = tc.sqrt( lsquare + Lmsquare/4 + lpsquare + l_dot_Lm - l_dot_lp - 2*lp_dot_Lm )
-        lp_m_lm_norm = tc.sqrt( lsquare + Lmsquare/4 + lpsquare - l_dot_Lm + l_dot_lp - 2*lp_dot_Lm )
-        l_p_lm_p_lp_norm = tc.sqrt( lsquare + Lmsquare/4 + lpsquare + l_dot_Lm + l_dot_lp + 2*lp_dot_Lm )
-        lp_p_lm_norm = tc.sqrt( lsquare + Lmsquare/4 + lpsquare - l_dot_Lm - l_dot_lp + 2*lp_dot_Lm )
+        l_m_lp_p_lm_norm =  tc.sqrt( lsquare + Lmsquare/4 + lpsquare + l_dot_Lm - 2*l_dot_lp - lp_dot_Lm )
+        lp_m_lm_norm =      tc.sqrt( lsquare + Lmsquare/4 + lpsquare - l_dot_Lm + 2*l_dot_lp - lp_dot_Lm )
+        l_p_lm_p_lp_norm =  tc.sqrt( lsquare + Lmsquare/4 + lpsquare + l_dot_Lm + 2*l_dot_lp + lp_dot_Lm )
+        lp_p_lm_norm =      tc.sqrt( lsquare + Lmsquare/4 + lpsquare - l_dot_Lm - 2*l_dot_lp + lp_dot_Lm )
         # Delete redundant variables to save memory
         del(l_dot_lp, l_dot_Lm, lp_dot_Lm)
 
@@ -325,163 +348,12 @@ class Cl_kSZ2_HI2():
         dCl *= P_2Lm * self.bias_velocity(k_2Lm, zi)**2
 
         # Delete redundant variables to save memory
-        del(k_l_p_lm_p_lp_norm, k_lm_p_lp_norm, k_lp)
+        del(k_l_p_lm_p_lp_norm, k_lm_p_lp_norm, k_2Lm)
 
         # The beam functions and the metric determinant contribution
         dCl *= self.Beam_kSZ(l_m_lp_p_lm_norm) * self.Beam_kSZ(lp_m_lm_norm) * self.Beam_HI(l_p_lm_p_lp_norm) * self.Beam_HI(lp_p_lm_norm) * Lm * lp * 4
 
-        if debug:
-            dCl_res = tc.sum(dCl) * Tm_list[1] * (l_max - l_min) / (N_l - 1)
-            return dCl_res
-
-        return dCl
-
-    
-    def integral_over_z(self, dCl_tot):
-        # The window functions
-        dCl_tot *= self.F_kSZ**2 * self.G_HI**2 * self.dchi_by_dz
-        dCl_res = tc.trapz(dCl_tot, self.z_array, dim=-1)
-        return dCl_res
-
-    
-    def dCl_timer(self, zi, l, l1, l_min = 1, l_max = 800, N_l = 1600, N_theta = 243):
-        """Evaluare the integrand, dCl, as a function of z, l and l_1.
-
-        Here we sum over theta_1, l_2, and theta_2. To get the final C_l result, one has to integrate dCl over chi and l_1, for a given l.
-
-        Input
-        -----
-        `z` : float. 
-            The redshift. 
-
-        `l` : float. 
-            The moment for C_l. Don't need to be an integer since we are in flat-sky approximation.
-
-        `l1` : float.
-            The norm of \\vec{l}_1.
-
-        """
-        ##################################################
-        # Redefine the inputs as tc.tensors
-
-        t0 = time.time()
-        # z = tc.tensor([self.z_list[zindex]], dtype=tc.float64)
-        l = tc.tensor([l], dtype=tc.float64)
-        l1 = tc.tensor([l1], dtype=tc.float64)
-
-        # Make the mesh grid for theta_1, |l_2|, and theta_2
-        t1_list = tc.arange(N_theta, dtype=tc.float64) * tc.pi / N_theta
-        t2_list = deepcopy(t1_list)
-        l2_list = tc.linspace(l_min, l_max, N_l, dtype=tc.float64)
-        l2, t1, t2 = tc.meshgrid(l2_list, t1_list, t2_list, indexing='ij')
-
-        print('Meshgrid finished ', time.time() - t0)
-        # # Make the mesh grid for theta_1, |l_2|, and theta_2
-        # t1 = tc.tensor([tc.pi / 3.], dtype=tc.float64)
-        # t2_list = tc.arange(N_theta, dtype=tc.float64) * 2 * tc.pi / N_theta
-        # l2_list = tc.linspace(l_min, l_max, N_l, dtype=tc.float64) # 10**tc.linspace(np.log10(l_min), np.log10(l_max), N_l, dtype=tc.float64)
-        # l2, t2 = tc.meshgrid(l2_list, t2_list, indexing='ij')
-
-        # Pre-define useful varibales and constants
-        chi = self.chi_of_z[zi]
-        lsquare = l**2
-        l1square = l1**2
-        l2square = l2**2
-
-        l_dot_l1 = Polar_dot(l, 0., l1, t1)
-        l_dot_l2 = Polar_dot(l, 0., l2, t2)
-        l1_dot_l2 = Polar_dot(l1, t1, l2, t2)
-
-        k_l1_p_l2_norm = tc.sqrt( l1square + l2square + 2*l1_dot_l2 ) / chi
-        k_l_p_l2_norm = tc.sqrt( lsquare + l2square + 2*l_dot_l2 ) / chi
-        k_l_m_l1_p_l2_norm = tc.sqrt( lsquare + l1square + l2square - 2*l_dot_l1 + 2*l_dot_l2 - 2*l1_dot_l2 ) / chi
-        k_l2 = l2 / chi
-
-        print('k norms have been evaluated ', time.time() - t0)
-        # Delete redundant variables to save memory
-        del(l1_dot_l2)
-
-        theta_l_p_l2 = Evaluate_angle(2, l, tc.tensor([0.]), l2, t2)
-        theta_l1_p_l2 = Evaluate_angle(2, l, tc.tensor([0.]), l2, t2)
-        theta_l_m_l1_p_l2 = Evaluate_angle(3, l, tc.tensor([0.]), -l1, t1, l2, t2)
-        print('Angles have been evaluated ', time.time() - t0)
-
-        # Pre-calculate the matter power spectrum
-        P_l1_p_l2_norm = self.Power_matter_1d(k_l1_p_l2_norm, zi)
-        P_l_p_l2_norm = self.Power_matter_1d(k_l_p_l2_norm, zi)
-        P_l2 = self.Power_matter_1d(k_l2, zi)
-        P_l_m_l1_p_l2_norm = self.Power_matter_1d(k_l_m_l1_p_l2_norm, zi)
-        print('Powers have been evaluated ', time.time() - t0)
-       
-
-        ##################################################
-        # Evaluate the integrand
-        # Initialization
-        dCl_tot = tc.zeros_like(t2)
-
-        # Contribution originate from each term in Wick Theorem
-        # Term 5 and Term 6
-        dCl = - tc.cos(theta_l1_p_l2 - t2)
-        dCl *= P_l1_p_l2_norm * self.bias_electron(k_l1_p_l2_norm,zi)**2 + P_l_m_l1_p_l2_norm * self.bias_electron(k_l_m_l1_p_l2_norm,zi)**2
-        dCl *= P_l_p_l2_norm        * self.bias_velocity(k_l1_p_l2_norm,zi)     * self.bias_HI(k_l1_p_l2_norm,zi)
-        dCl *= P_l2                 * self.bias_velocity(k_l2,zi)               * self.bias_HI(k_l2,zi)
-        dCl_tot += dCl
-        print('Term 5 and 6', time.time() - t0)
-        # Term 8 
-        dCl = tc.cos(theta_l_p_l2 - theta_l1_p_l2)
-        dCl *= P_l_m_l1_p_l2_norm   * self.bias_electron(k_l_m_l1_p_l2_norm,zi) * self.bias_velocity(k_l_m_l1_p_l2_norm,zi)
-        dCl *= P_l_p_l2_norm        * self.bias_electron(k_l_p_l2_norm,zi)      * self.bias_HI(k_l_p_l2_norm,zi)
-        dCl *= P_l2                 * self.bias_velocity(k_l2,zi)               * self.bias_HI(k_l2,zi)
-        dCl_tot += dCl
-        print('Term 8', time.time() - t0)
-        # Term 9
-        dCl = tc.cos(theta_l_m_l1_p_l2 - t2)
-        dCl *= P_l1_p_l2_norm       * self.bias_electron(k_l1_p_l2_norm,zi)     * self.bias_velocity(k_l1_p_l2_norm,zi)
-        dCl *= P_l2                 * self.bias_electron(k_l2,zi)               * self.bias_HI(k_l2,zi)
-        dCl *= P_l_p_l2_norm        * self.bias_velocity(k_l_p_l2_norm,zi)      * self.bias_HI(k_l_p_l2_norm,zi)
-        dCl_tot += dCl
-        print('Term 9', time.time() - t0)
-        # Term 10
-        dCl = tc.cos(theta_l1_p_l2 - t2)
-        dCl *= P_l_p_l2_norm        * self.bias_electron(k_l_p_l2_norm,zi)      * self.bias_HI(k_l_p_l2_norm,zi)
-        dCl *= P_l1_p_l2_norm       * self.bias_electron(k_l1_p_l2_norm,zi)     * self.bias_velocity(k_l1_p_l2_norm,zi)
-        dCl *= P_l2                 * self.bias_velocity(k_l2,zi)               * self.bias_HI(k_l2,zi)
-        dCl_tot += dCl
-        print('Term 10', time.time() - t0)
-        # Term 11
-        dCl = -1.
-        dCl *= P_l_p_l2_norm        * self.bias_electron(k_l_p_l2_norm,zi)      * self.bias_HI(k_l_p_l2_norm,zi)
-        dCl *= P_l1_p_l2_norm       * self.bias_velocity(k_l1_p_l2_norm,zi)     * self.bias_velocity(k_l1_p_l2_norm,zi)
-        dCl *= P_l2                 * self.bias_electron(k_l2,zi)               * self.bias_HI(k_l2,zi)
-        dCl_tot += dCl
-        print('Term 11', time.time() - t0)
-        # Term 13
-        dCl = tc.cos(theta_l_m_l1_p_l2 - theta_l_p_l2)
-        dCl *= P_l2                 * self.bias_electron(k_l2,zi)               * self.bias_HI(k_l2,zi)
-        dCl *= P_l_m_l1_p_l2_norm   * self.bias_electron(k_l_m_l1_p_l2_norm,zi) * self.bias_velocity(k_l_m_l1_p_l2_norm,zi)
-        dCl *= P_l1_p_l2_norm       * self.bias_velocity(k_l1_p_l2_norm,zi)     * self.bias_HI(k_l1_p_l2_norm,zi)
-        dCl_tot += dCl
-        print('Term 13', time.time() - t0)
-        # Term 14
-        dCl = -1.
-        dCl *= P_l2                 * self.bias_electron(k_l2,zi)               * self.bias_HI(k_l2,zi)
-        dCl *= P_l_m_l1_p_l2_norm   * self.bias_velocity(k_l_m_l1_p_l2_norm,zi) * self.bias_velocity(k_l_m_l1_p_l2_norm,zi)
-        dCl *= P_l1_p_l2_norm       * self.bias_electron(k_l1_p_l2_norm,zi)     * self.bias_HI(k_l1_p_l2_norm,zi)
-        dCl_tot += dCl
-        print('Term 14', time.time() - t0)
-
-        # Delete redundant variables to save memory
-        del(P_l1_p_l2_norm, P_l_p_l2_norm, P_l2, P_l_m_l1_p_l2_norm)
-        # The beam functions
-        l_m_l1_norm = tc.sqrt( lsquare + l1square - 2*l_dot_l1 )
-        l_p_l2_norm = tc.sqrt( lsquare + l2square + 2*l_dot_l2 )
-        dCl_tot *= self.Beam_kSZ(l_m_l1_norm) * self.Beam_kSZ(l1) * self.Beam_HI(l_p_l2_norm) * self.Beam_HI(l2)
-        print('Beams ', time.time() - t0)
-        # The window functions and the metric determinant contribution 
-        dCl_tot *= l1 * l2 * self.F_kSZ[zi]**2 * self.G_HI[zi]**2 * self.dchi_by_dz[zi]
-        print('Window functions', time.time() - t0)
-
-        dCl_res = tc.sum(dCl_tot) * t2_list[1] * (l_max - l_min) / (N_l - 1)
+        dCl_res = tc.trapz(tc.trapz(dCl, Tm_list, dim=-1), Lm_list, dim=-1)
 
         return dCl_res
 
