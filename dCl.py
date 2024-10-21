@@ -170,9 +170,9 @@ class Cl_kSZ2_HI2():
         l_dot_l2 = Polar_dot(l, 0., l2, t2)
         l1_dot_l2 = Polar_dot(l1, t1, l2, t2)
 
-        k_l1_p_l2_norm = tc.sqrt( l1square + l2square + 2*l1_dot_l2 ) / chi
-        k_l_p_l2_norm = tc.sqrt( lsquare + l2square + 2*l_dot_l2 ) / chi
-        k_l_m_l1_p_l2_norm = tc.sqrt( lsquare + l1square + l2square - 2*l_dot_l1 + 2*l_dot_l2 - 2*l1_dot_l2 ) / chi
+        k_l1_p_l2_norm = tc.sqrt( (l1square + l2square + 2*l1_dot_l2).abs() ) / chi
+        k_l_p_l2_norm = tc.sqrt( (lsquare + l2square + 2*l_dot_l2).abs() ) / chi
+        k_l_m_l1_p_l2_norm = tc.sqrt( (lsquare + l1square + l2square - 2*l_dot_l1 + 2*l_dot_l2 - 2*l1_dot_l2).abs() ) / chi
         k_l2 = l2 / chi
 
         # Delete redundant variables to save memory
@@ -222,11 +222,14 @@ class Cl_kSZ2_HI2():
         del(P_l1_p_l2_norm, P_l_p_l2_norm, P_l2, P_l_m_l1_p_l2_norm, theta_l_p_l2, theta_l1_p_l2, theta_l_m_l1_p_l2)
 
         # The beam functions and the metric determinant contribution
-        l_m_l1_norm = tc.sqrt( lsquare + l1square - 2*l_dot_l1 )
-        l_p_l2_norm = tc.sqrt( lsquare + l2square + 2*l_dot_l2 )
+        l_m_l1_norm = tc.sqrt( (lsquare + l1square - 2*l_dot_l1).abs() )
+        l_p_l2_norm = tc.sqrt( (lsquare + l2square + 2*l_dot_l2).abs() )
         dCl_tot *= self.Beam_kSZ(l_m_l1_norm,zi) * self.Beam_kSZ(l1,zi) * self.Beam_HI(l_p_l2_norm,zi) * self.Beam_HI(l2,zi) * l1 * l2
 
-        dCl_res = tc.trapz(tc.trapz(dCl, t2_list, dim=-1), l2_list, dim=-1)
+        if dim==3:
+            dCl_res = tc.trapz(tc.trapz(tc.trapz(dCl, t2_list, dim=-1), l2_list, dim=-1), t1_list, dim=-1)
+        else:
+            dCl_res = tc.trapz(tc.trapz(dCl, t2_list, dim=-1), l2_list, dim=-1)
 
         return dCl_res
     
@@ -262,10 +265,10 @@ class Cl_kSZ2_HI2():
         l_dot_lp = Polar_dot(l, 0., lp, tp)
         lm_dot_lp = Polar_dot(lm, tm, lp, tp)
 
-        l_m_lp_p_lm_norm = tc.sqrt( lsquare + lmsquare + lpsquare + 2*l_dot_lm - 2*l_dot_lp - 2*lm_dot_lp )
-        lp_m_lm_norm = tc.sqrt( lmsquare + lpsquare - 2*lm_dot_lp )
-        l_p_lm_p_lp_norm = tc.sqrt( lsquare + lmsquare + lpsquare + 2*l_dot_lm + 2*l_dot_lp + 2*lm_dot_lp )
-        lp_p_lm_norm = tc.sqrt( lmsquare + lpsquare + 2*lm_dot_lp )
+        l_m_lp_p_lm_norm = tc.sqrt( (lsquare + lmsquare + lpsquare + 2*l_dot_lm - 2*l_dot_lp - 2*lm_dot_lp).abs() )
+        lp_m_lm_norm = tc.sqrt( (lmsquare + lpsquare - 2*lm_dot_lp).abs() )
+        l_p_lm_p_lp_norm = tc.sqrt( (lsquare + lmsquare + lpsquare + 2*l_dot_lm + 2*l_dot_lp + 2*lm_dot_lp).abs() )
+        lp_p_lm_norm = tc.sqrt( (lmsquare + lpsquare + 2*lm_dot_lp).abs() )
         # Delete redundant variables to save memory
         del(l_dot_lm, l_dot_lp, lm_dot_lp)
 
@@ -290,7 +293,10 @@ class Cl_kSZ2_HI2():
         # The beam functions and the metric determinant contribution
         dCl *= self.Beam_kSZ(l_m_lp_p_lm_norm) * self.Beam_kSZ(lp_m_lm_norm) * self.Beam_HI(l_p_lm_p_lp_norm) * self.Beam_HI(lp_p_lm_norm) * lm * lp * 4
 
-        dCl_res = tc.trapz(tc.trapz(dCl, tp_list, dim=-1), lp_list, dim=-1)
+        if dim==3:
+            dCl_res = tc.trapz(tc.trapz(tc.trapz(dCl, tp_list, dim=-1), lp_list, dim=-1), tm_list, dim=-1)
+        else:
+            dCl_res = tc.trapz(tc.trapz(dCl, tp_list, dim=-1), lp_list, dim=-1)
 
         return dCl_res
 
@@ -325,10 +331,10 @@ class Cl_kSZ2_HI2():
         l_dot_Lm = Polar_dot(l, 0., Lm, Tm)
         lp_dot_Lm = Polar_dot(lp, tp, Lm, Tm)
 
-        l_m_lp_p_lm_norm =  tc.sqrt( lsquare + Lmsquare/4 + lpsquare + l_dot_Lm - 2*l_dot_lp - lp_dot_Lm )
-        lp_m_lm_norm =      tc.sqrt( lsquare + Lmsquare/4 + lpsquare - l_dot_Lm + 2*l_dot_lp - lp_dot_Lm )
-        l_p_lm_p_lp_norm =  tc.sqrt( lsquare + Lmsquare/4 + lpsquare + l_dot_Lm + 2*l_dot_lp + lp_dot_Lm )
-        lp_p_lm_norm =      tc.sqrt( lsquare + Lmsquare/4 + lpsquare - l_dot_Lm - 2*l_dot_lp + lp_dot_Lm )
+        l_m_lp_p_lm_norm =  tc.sqrt( (lsquare + Lmsquare/4 + lpsquare + l_dot_Lm - 2*l_dot_lp - lp_dot_Lm).abs() )
+        lp_m_lm_norm =      tc.sqrt( (lsquare + Lmsquare/4 + lpsquare - l_dot_Lm + 2*l_dot_lp - lp_dot_Lm).abs() )
+        l_p_lm_p_lp_norm =  tc.sqrt( (lsquare + Lmsquare/4 + lpsquare + l_dot_Lm + 2*l_dot_lp + lp_dot_Lm).abs() )
+        lp_p_lm_norm =      tc.sqrt( (lsquare + Lmsquare/4 + lpsquare - l_dot_Lm - 2*l_dot_lp + lp_dot_Lm).abs() )
         # Delete redundant variables to save memory
         del(l_dot_lp, l_dot_Lm, lp_dot_Lm)
 
@@ -353,7 +359,10 @@ class Cl_kSZ2_HI2():
         # The beam functions and the metric determinant contribution
         dCl *= self.Beam_kSZ(l_m_lp_p_lm_norm) * self.Beam_kSZ(lp_m_lm_norm) * self.Beam_HI(l_p_lm_p_lp_norm) * self.Beam_HI(lp_p_lm_norm) * Lm * lp * 4
 
-        dCl_res = tc.trapz(tc.trapz(dCl, Tm_list, dim=-1), Lm_list, dim=-1)
+        if dim==3:
+            dCl_res = tc.trapz(tc.trapz(tc.trapz(dCl, Tm_list, dim=-1), Lm_list, dim=-1), tp_list, dim=-1)
+        else:
+            dCl_res = tc.trapz(tc.trapz(dCl, Tm_list, dim=-1), Lm_list, dim=-1)
 
         return dCl_res
 
