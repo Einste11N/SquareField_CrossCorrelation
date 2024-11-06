@@ -123,7 +123,7 @@ class Cl_kSZ2_HI2():
         return dCl_res
 
 
-    def dCl_l1(self, zi, l, l1, l_min = 1, l_max = 800, N_l = 1600, N_theta = 900, dim=3, theta = tc.pi / 2.):
+    def dCl_l1(self, zi, l, l1, pz=0, l_min = 1, l_max = 800, N_l = 1600, N_theta = 900, dim=3, theta = tc.pi / 2.):
         """Evaluare the integrand, dCl, as a function of z, l and l_1.
 
         Here we sum over theta_1, l_2, and theta_2. To get the final C_l result, one has to integrate dCl over chi and l_1, for a given l.
@@ -144,6 +144,7 @@ class Cl_kSZ2_HI2():
         # Redefine the inputs as tc.tensors
         l = tc.tensor([l])
         l1 = tc.tensor([l1])
+        pz = tc.tensor([pz])
 
         # Make the mesh grid for theta_1, |l_2|, and theta_2
         t2_list = tc.arange(N_theta + 1) * 2 * tc.pi / N_theta
