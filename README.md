@@ -1,2 +1,2 @@
 # SquareField_CrossCorrelation
-Cross Correlation for kSZ square field and square of projected HI field
+Cross-Correlation between kSZ square field and projection of HI square field
