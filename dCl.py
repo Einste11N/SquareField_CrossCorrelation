@@ -170,9 +170,10 @@ class Cl_kSZ2_HI2():
         l_dot_l2 = Polar_dot(l, 0., l2, t2)
         l1_dot_l2 = Polar_dot(l1, t1, l2, t2)
 
-        k_l1_p_l2_norm = tc.sqrt( (l1square + l2square + 2*l1_dot_l2).abs() ) / chi
-        k_l_p_l2_norm = tc.sqrt( (lsquare + l2square + 2*l_dot_l2).abs() ) / chi
-        k_l_m_l1_p_l2_norm = tc.sqrt( (lsquare + l1square + l2square - 2*l_dot_l1 + 2*l_dot_l2 - 2*l1_dot_l2).abs() ) / chi
+        epsilon = tc.tensor([1e-8])
+        k_l1_p_l2_norm = tc.sqrt( (l1square + l2square + 2*l1_dot_l2).abs() ) / chi + epsilon
+        k_l_p_l2_norm = tc.sqrt( (lsquare + l2square + 2*l_dot_l2).abs() ) / chi + epsilon
+        k_l_m_l1_p_l2_norm = tc.sqrt( (lsquare + l1square + l2square - 2*l_dot_l1 + 2*l_dot_l2 - 2*l1_dot_l2).abs() ) / chi + epsilon
         k_l2 = l2 / chi
 
         # Delete redundant variables to save memory
@@ -227,9 +228,9 @@ class Cl_kSZ2_HI2():
         dCl_tot *= self.Beam_kSZ(l_m_l1_norm,zi) * self.Beam_kSZ(l1,zi) * self.Beam_HI(l_p_l2_norm,zi) * self.Beam_HI(l2,zi) * l1 * l2
 
         if dim==3:
-            dCl_res = tc.trapz(tc.trapz(tc.trapz(dCl, t2_list, dim=-1), l2_list, dim=-1), t1_list, dim=-1)
+            dCl_res = tc.trapz(tc.trapz(tc.trapz(dCl_tot, t2_list, dim=-1), l2_list, dim=-1), t1_list, dim=-1)
         else:
-            dCl_res = tc.trapz(tc.trapz(dCl, t2_list, dim=-1), l2_list, dim=-1)
+            dCl_res = tc.trapz(tc.trapz(dCl_tot, t2_list, dim=-1), l2_list, dim=-1)
 
         return dCl_res
     
@@ -273,8 +274,9 @@ class Cl_kSZ2_HI2():
         del(l_dot_lm, l_dot_lp, lm_dot_lp)
 
         # Pre-Evaluate the k modes
-        k_l_p_lm_p_lp_norm = l_p_lm_p_lp_norm / chi
-        k_lm_p_lp_norm = lp_p_lm_norm / chi
+        epsilon = tc.tensor([1e-8])
+        k_l_p_lm_p_lp_norm = l_p_lm_p_lp_norm / chi + epsilon
+        k_lm_p_lp_norm = lp_p_lm_norm / chi + epsilon
         k_2lp = 2 * lp / chi
 
         # Pre-calculate the matter power spectrum
@@ -339,8 +341,9 @@ class Cl_kSZ2_HI2():
         del(l_dot_lp, l_dot_Lm, lp_dot_Lm)
 
         # Pre-Evaluate the k modes
-        k_l_p_lm_p_lp_norm = l_p_lm_p_lp_norm / chi
-        k_lm_p_lp_norm = lp_p_lm_norm / chi
+        epsilon = tc.tensor([1e-8])
+        k_l_p_lm_p_lp_norm = l_p_lm_p_lp_norm / chi + epsilon
+        k_lm_p_lp_norm = lp_p_lm_norm / chi + epsilon
         k_2Lm = 2 * Lm / chi
 
         # Pre-calculate the matter power spectrum
