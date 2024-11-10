@@ -7,8 +7,6 @@ from scipy.interpolate import interp1d
 import camb
 from copy import deepcopy
 
-import time
-
 
 class Cl_kSZ2_HI2():
 
@@ -123,7 +121,7 @@ class Cl_kSZ2_HI2():
         return dCl_res
 
 
-    def dCl_l1(self, zi, l, l1, pz=1e-8, l_min = 1, l_max = 800, N_l = 1600, N_theta = 900, dim=3, theta = tc.pi / 2.):
+    def dCl_l1(self, zi, l, l1, pz=1e-8, l_min = 1, l_max = 800, N_l = 1600, N_theta = 900, dim=3, theta = tc.pi / 2., beam=True):
         """Evaluare the integrand, dCl, as a function of z, l and l_1.
 
         Here we sum over theta_1, l_2, and theta_2. To get the final C_l result, one has to integrate dCl over chi and l_1, for a given l.
@@ -227,7 +225,24 @@ class Cl_kSZ2_HI2():
 
         # The beam functions and the metric determinant contribution
         l_m_l1_norm = tc.sqrt( (lsquare + l1square - 2*l_dot_l1).abs() )
-        dCl_tot *= l1 * l2 * self.Beam_kSZ(l_m_l1_norm,zi) * self.Beam_kSZ(l1,zi) * self.Beam_HI(l,zi)
+
+        if beam=='both':
+            dCl_nobeam = dCl_tot * l1 * l2
+            dCl_beam = dCl_nobeam * self.Beam_kSZ(l_m_l1_norm,zi) * self.Beam_kSZ(l1,zi) * self.Beam_HI(l,zi)
+
+            if dim==3:
+                dCl_res_nobeam = tc.trapz(tc.trapz(tc.trapz(dCl_nobeam, t2_list, dim=-1), l2_list, dim=-1), t1_list, dim=-1)
+                dCl_res_beam = tc.trapz(tc.trapz(tc.trapz(dCl_beam, t2_list, dim=-1), l2_list, dim=-1), t1_list, dim=-1)
+            else:
+                dCl_res_nobeam = tc.trapz(tc.trapz(dCl_nobeam, t2_list, dim=-1), l2_list, dim=-1)
+                dCl_res_beam = tc.trapz(tc.trapz(dCl_beam, t2_list, dim=-1), l2_list, dim=-1)
+
+            return dCl_res_nobeam, dCl_res_beam
+
+        elif beam:
+            dCl_tot *= l1 * l2 * self.Beam_kSZ(l_m_l1_norm,zi) * self.Beam_kSZ(l1,zi) * self.Beam_HI(l,zi)
+        else:
+            dCl_tot *= l1 * l2
 
         if dim==3:
             dCl_res = tc.trapz(tc.trapz(tc.trapz(dCl_tot, t2_list, dim=-1), l2_list, dim=-1), t1_list, dim=-1)
@@ -236,7 +251,7 @@ class Cl_kSZ2_HI2():
 
         return dCl_res
     
-    def dCl_lm_Term11(self, zi, l, lm, pz=1e-8, l_min = 1, l_max = 800, N_l = 1600, N_theta = 240, dim=3, theta = tc.pi / 2.):
+    def dCl_lm_Term11(self, zi, l, lm, pz=1e-8, l_min = 1, l_max = 800, N_l = 1600, N_theta = 240, dim=3, theta = tc.pi / 2., beam=True):
         '''
         Integrand for Term 11, with parameter redefine ``lp = (l2 + l1) / 2``, and ``lm = (l2 - l1) / 2``
         '''
@@ -277,7 +292,7 @@ class Cl_kSZ2_HI2():
         # Pre-Evaluate the k modes
         k_l_p_lm_p_lp_norm= tc.sqrt( (lsquare + lmsquare + lpsquare + 2*l_dot_lm + 2*l_dot_lp + 2*lm_dot_lp) / chisquare + pzsquare )
         k_lm_p_lp_norm =    tc.sqrt( (lmsquare + lpsquare + 2*lm_dot_lp) / chisquare + pzsquare )
-        k_2lp = tc.sqrt( 4 *lpsquare / chisquare + pzsquare)
+        k_2lp = tc.sqrt( 4 * lpsquare / chisquare + pzsquare)
         # Delete redundant variables to save memory
         del(l_dot_lm, l_dot_lp, lm_dot_lp)
 
@@ -299,6 +314,25 @@ class Cl_kSZ2_HI2():
         # The beam functions and the metric determinant contribution
         dCl *= 4 * lm * lp * self.Beam_kSZ(l_m_lp_p_lm_norm) * self.Beam_kSZ(lp_m_lm_norm) * self.Beam_HI(l)
 
+
+        if beam=='both':
+            dCl_nobeam = dCl * 4 * lm * lp
+            dCl_beam = dCl_nobeam * self.Beam_kSZ(l_m_lp_p_lm_norm) * self.Beam_kSZ(lp_m_lm_norm) * self.Beam_HI(l)
+
+            if dim==3:
+                dCl_res_nobeam = tc.trapz(tc.trapz(tc.trapz(dCl_nobeam, tp_list, dim=-1), lp_list, dim=-1), tm_list, dim=-1)
+                dCl_res_beam = tc.trapz(tc.trapz(tc.trapz(dCl_beam, tp_list, dim=-1), lp_list, dim=-1), tm_list, dim=-1)
+            else:
+                dCl_res_nobeam = tc.trapz(tc.trapz(dCl_nobeam, tp_list, dim=-1), lp_list, dim=-1)
+                dCl_res_beam = tc.trapz(tc.trapz(dCl_beam, tp_list, dim=-1), lp_list, dim=-1)
+            return dCl_res_nobeam, dCl_res_beam
+
+        elif beam:
+            dCl_tot *= 4 * lm * lp * self.Beam_kSZ(l_m_lp_p_lm_norm) * self.Beam_kSZ(lp_m_lm_norm) * self.Beam_HI(l)
+        else:
+            dCl_tot *= 4 * lm * lp
+
+
         if dim==3:
             dCl_res = tc.trapz(tc.trapz(tc.trapz(dCl, tp_list, dim=-1), lp_list, dim=-1), tm_list, dim=-1)
         else:
@@ -306,7 +340,7 @@ class Cl_kSZ2_HI2():
 
         return dCl_res
 
-    def dCl_lp_Term14(self, zi, l, lp, pz=1e-8, l_min = 1, l_max = 800, N_l = 1600, N_theta = 240, dim=3, theta = tc.pi / 2.):
+    def dCl_lp_Term14(self, zi, l, lp, pz=1e-8, l_min = 1, l_max = 800, N_l = 1600, N_theta = 240, dim=3, theta = tc.pi / 2., beam=True):
         '''
         Integrand for Term 14, with parameter redefine ``lp = (l2 + l1) / 2``, and ``Lm = (l - l1 + l2) / 2 = l / 2 + lm``
         '''
@@ -319,7 +353,7 @@ class Cl_kSZ2_HI2():
         Lm_list = tc.hstack([(10**tc.linspace(-4, np.log10(l_min), 31))[:-1], tc.linspace(l_min, l_max, N_l)])
 
         if dim==3:
-            tp_list = tc.linspace(0, tc.pi, N_theta//2 + 4)
+            tp_list = tc.linspace(0, tc.pi, N_theta//2 + 1)
             tp, Lm, Tm = tc.meshgrid(tp_list, Lm_list, Tm_list, indexing='ij')
         elif dim==2:
             tp = tc.tensor([theta])
@@ -342,10 +376,10 @@ class Cl_kSZ2_HI2():
         lp_dot_Lm = Polar_dot(lp, tp, Lm, Tm)
 
         # Pre-Evaluate the k modes
-        l_m_lp_p_lm_norm =  tc.sqrt( (lsquare + Lmsquare/4 + lpsquare + l_dot_Lm - 2*l_dot_lp - lp_dot_Lm).abs() )
-        lp_m_lm_norm =      tc.sqrt( (lsquare + Lmsquare/4 + lpsquare - l_dot_Lm + 2*l_dot_lp - lp_dot_Lm).abs() )
-        k_l_p_lm_p_lp_norm= tc.sqrt( (lsquare + Lmsquare/4 + lpsquare + l_dot_Lm + 2*l_dot_lp + lp_dot_Lm) / chisquare + pzsquare )
-        k_lm_p_lp_norm =    tc.sqrt( (lsquare + Lmsquare/4 + lpsquare - l_dot_Lm - 2*l_dot_lp + lp_dot_Lm) / chisquare + pzsquare )
+        l_m_lp_p_lm_norm =  tc.sqrt( (lsquare/4 + Lmsquare + lpsquare + l_dot_Lm - l_dot_lp - 2*lp_dot_Lm).abs() )
+        lp_m_lm_norm =      tc.sqrt( (lsquare/4 + Lmsquare + lpsquare - l_dot_Lm + l_dot_lp - 2*lp_dot_Lm).abs() )
+        k_l_p_lm_p_lp_norm= tc.sqrt( (lsquare/4 + Lmsquare + lpsquare + l_dot_Lm + l_dot_lp + 2*lp_dot_Lm) / chisquare + pzsquare )
+        k_lm_p_lp_norm =    tc.sqrt( (lsquare/4 + Lmsquare + lpsquare - l_dot_Lm - l_dot_lp + 2*lp_dot_Lm) / chisquare + pzsquare )
         k_2Lm = tc.sqrt( 4 * Lmsquare / chisquare + pzsquare )
         # Delete redundant variables to save memory
         del(l_dot_lp, l_dot_Lm, lp_dot_Lm)
@@ -367,6 +401,24 @@ class Cl_kSZ2_HI2():
 
         # The beam functions and the metric determinant contribution
         dCl *= 4 * Lm * lp * self.Beam_kSZ(l_m_lp_p_lm_norm) * self.Beam_kSZ(lp_m_lm_norm) * self.Beam_HI(l)
+
+        if beam=='both':
+            dCl_nobeam = dCl * 4 * Lm * lp
+            dCl_beam = dCl_nobeam * self.Beam_kSZ(l_m_lp_p_lm_norm) * self.Beam_kSZ(lp_m_lm_norm) * self.Beam_HI(l)
+
+            if dim==3:
+                dCl_res_nobeam = tc.trapz(tc.trapz(tc.trapz(dCl_nobeam, Tm_list, dim=-1), Lm_list, dim=-1), tp_list, dim=-1)
+                dCl_res_beam = tc.trapz(tc.trapz(tc.trapz(dCl_beam, Tm_list, dim=-1), Lm_list, dim=-1), tp_list, dim=-1)
+            else:
+                dCl_res_nobeam = tc.trapz(tc.trapz(dCl_nobeam, Tm_list, dim=-1), Lm_list, dim=-1)
+                dCl_res_beam = tc.trapz(tc.trapz(dCl_beam, Tm_list, dim=-1), Lm_list, dim=-1)
+            return dCl_res_nobeam, dCl_res_beam
+
+        elif beam:
+            dCl_tot *= 4 * Lm * lp * self.Beam_kSZ(l_m_lp_p_lm_norm) * self.Beam_kSZ(lp_m_lm_norm) * self.Beam_HI(l)
+        else:
+            dCl_tot *= 4 * Lm * lp
+
 
         if dim==3:
             dCl_res = tc.trapz(tc.trapz(tc.trapz(dCl, Tm_list, dim=-1), Lm_list, dim=-1), tp_list, dim=-1)
