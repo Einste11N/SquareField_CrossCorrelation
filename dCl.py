@@ -55,10 +55,10 @@ class Cl_kSZ2_HI2():
         # Instruments' properties
         Z_MEAN = 0.45 # mean redshift for HI observation
         FREQ_HI = 1420. # in unit MHz
-        self.SIGMA_HI = 0.0115 * 1000. * (1. + self.z_array) / FREQ_HI
-        self.SIGMA_KSZ = deepcopy(self.SIGMA_HI)
-        self.SIGMA_HI_MEAN = 0.0115 * 1000. * (1. + Z_MEAN) / FREQ_HI
-        self.SIGMA_KSZ_MEAN = deepcopy(self.SIGMA_HI_MEAN)
+        self.SIGMA_HI2 = (np.pi/180 / 60)**2 / 8 / np.log(2)
+        self.SIGMA_KSZ2 = deepcopy(self.SIGMA_HI2)
+        self.SIGMA_HI_MEAN2 = (0.0115 * 1000. * (1. + Z_MEAN) / FREQ_HI)**2
+        self.SIGMA_KSZ_MEAN2 = deepcopy(self.SIGMA_HI_MEAN2)
 
         # Arrays used for matter power spectrum interpolation
         # adding infrared asymptotic behavior (P proportional to k)
@@ -93,15 +93,15 @@ class Cl_kSZ2_HI2():
 
     def Beam_kSZ(self, l, zindex=0, use_mean = False):
         if use_mean:
-            return tc.exp(-l**2 * self.SIGMA_KSZ_MEAN**2 / 2)
+            return tc.exp(-l**2 * self.SIGMA_KSZ_MEAN2 / 2)
         else:
-            return tc.exp(-l**2 * self.SIGMA_KSZ[zindex]**2 / 2)
+            return tc.exp(-l**2 * self.SIGMA_KSZ2[zindex] / 2)
     
     def Beam_HI(self, l, zindex=0, use_mean = False):
         if use_mean:
-            return tc.exp(-l**2 * self.SIGMA_HI_MEAN**2 / 2)
+            return tc.exp(-l**2 * self.SIGMA_HI_MEAN2 / 2)
         else:
-            return tc.exp(-l**2 * self.SIGMA_HI[zindex]**2 / 2)
+            return tc.exp(-l**2 * self.SIGMA_HI2[zindex] / 2)
 
     def bias_electron(self, kh, zindex): # TO BE REVISED
         return kh/kh
