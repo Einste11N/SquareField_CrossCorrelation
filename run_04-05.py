@@ -30,7 +30,7 @@ def compute_11_14(params):
 
 if __name__ == '__main__':
     
-    N_JOBS = 16
-    processed_list = Parallel(n_jobs=N_JOBS)(delayed(compute_11_14)(i) for i in params)
+    N_JOBS = 8
+    processed_list = Parallel(n_jobs=N_JOBS, prefer='threads')(delayed(compute_11_14)(i) for i in params)
     res = np.array(processed_list).reshape([len(zlist), len(l_list), len(pz_list), len(l1_list), 4])
     np.save('res.npy', res)
