@@ -55,10 +55,10 @@ class Cl_kSZ2_HI2():
         # Instruments' properties
         Z_MEAN = 0.45 # mean redshift for HI observation
         FREQ_HI = 1420. # in unit MHz
-        self.SIGMA_HI2 = (np.pi/180 / 60)**2 / 8 / np.log(2)
-        self.SIGMA_KSZ2 = deepcopy(self.SIGMA_HI2)
+        self.SIGMA_HI2 = (0.0115 * 1000. * (1. + self.z_array) / FREQ_HI)**2
+        self.SIGMA_KSZ2 = (np.pi/180 / 60)**2 / 8 / np.log(2)
         self.SIGMA_HI_MEAN2 = (0.0115 * 1000. * (1. + Z_MEAN) / FREQ_HI)**2
-        self.SIGMA_KSZ_MEAN2 = deepcopy(self.SIGMA_HI_MEAN2)
+        self.SIGMA_KSZ_MEAN2 = (np.pi/180 / 60)**2 / 8 / np.log(2)
 
         # Arrays used for matter power spectrum interpolation
         # adding infrared asymptotic behavior (P proportional to k)
@@ -95,7 +95,7 @@ class Cl_kSZ2_HI2():
         if use_mean:
             return tc.exp(-l**2 * self.SIGMA_KSZ_MEAN2 / 2)
         else:
-            return tc.exp(-l**2 * self.SIGMA_KSZ2[zindex] / 2)
+            return tc.exp(-l**2 * self.SIGMA_KSZ2 / 2)
     
     def Beam_HI(self, l, zindex=0, use_mean = False):
         if use_mean:

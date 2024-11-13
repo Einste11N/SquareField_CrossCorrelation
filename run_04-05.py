@@ -9,7 +9,7 @@ import time
 Nz = 10
 zlist = tc.linspace(0.4, 0.5, Nz)
 l_list = tc.linspace(50, 200, 10)
-pz_list = tc.hstack([tc.tensor([1e-8, 1e-6, 1e-4, 1e-3]), 10**tc.linspace(-2, 0, 0.2)])
+pz_list = tc.hstack([tc.tensor([1e-8, 1e-6, 1e-4, 1e-3]), 10**tc.linspace(-2, -0.4, 9)])
 l1_list = tc.hstack([ 10**tc.linspace(-4, 0, 5)[:-1], 10**tc.linspace(0, 1, 6)[:-1], tc.linspace(10, 300, 59), (10**tc.linspace(np.log10(300), np.log10(600), 10))[1:] ])
 
 params = []
