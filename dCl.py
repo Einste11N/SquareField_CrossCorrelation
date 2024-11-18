@@ -45,8 +45,10 @@ class Cl_kSZ2_HI2():
         self.Xe_of_z = tc.tensor(Xe_of_z)                                   # Ionized franction Xe
         self.chi_of_z = tc.tensor(chi_of_z)                                 # Comoving distance chi, in unit Mpc/h
         self.dchi_by_dz = 1. / self.H_of_z                                  # Comoving distance growth rate dchi/dz
-        self.F_kSZ = self.Xe_of_z * (1+self.z_array)**2 / self.chi_of_z**2  # F_kSZ, propto visibility function of kSZ
-        self.G_HI = 1 / (z[-1] - z[0]) / self.chi_of_z**2                   # G_HI, proptp window function of HI
+        self.visibility_of_z = self.Xe_of_z * (1+self.z_array)**2           # Visibility function g(z) of kSZ effect
+        self.W_HI = 1 / (z[-1] - z[0])                                      # Window function of HI observation
+        self.F_kSZ = self.visibility_of_z / self.chi_of_z**2                # F_kSZ, propto visibility function of kSZ
+        self.G_HI = self.W_HI / self.chi_of_z**2                            # G_HI, proptp window function of HI
 
         # Save the cosmological model, for checking the result
         self.results = results
@@ -427,6 +429,48 @@ class Cl_kSZ2_HI2():
 
         return dCl_res
 
+
+
+    def dCl_kSZ_PRL(self, zi, l, l_min = 1, l_max = 800, N_l = 1600, N_mu = 200, beam=True):
+        ##################################################
+        # Redefine the inputs as tc.tensors and make the meshgrid
+        chi = self.chi_of_z[zi]
+        k = tc.tensor([l]) / chi
+        kk_list = tc.hstack([tc.linspace(1e-4, l_min, 11)[:-1], tc.linspace(l_min, l_max, N_l)]) / chi
+        mu_list = tc.linspace(-1, 1, N_mu)
+
+        kk, mu = tc.meshgrid(kk_list, mu_list, indexing='ij')
+        k_m_kk_norm_square = k**2 + kk**2 - 2*k*kk*mu
+
+        ##################################################
+        # Evaluation
+        dCl  = self.Power_matter_1d(kk, zi) * self.Power_matter_1d(tc.sqrt(k_m_kk_norm_square), zi)
+        dCl *= tc.pi * k * (k - 2*kk*mu) * (1 - mu**2) / k_m_kk_norm_square
+
+        z_dependence = 1/(1+self.z_array[zi]) * self.H_of_z[zi] * self.f_of_z[zi]
+        dCl *= z_dependence
+
+        ##################################################
+        # Integral
+        if beam=='both':
+            dCl_beam = dCl * self.Beam_kSZ(l,zi)**2
+
+            dCl_res_nobeam = tc.trapz(tc.trapz(dCl, mu_list, dim=-1), kk_list, dim=-1)
+            dCl_res_beam = tc.trapz(tc.trapz(dCl_beam, mu_list, dim=-1), kk_list, dim=-1)
+            return dCl_res_nobeam, dCl_res_beam
+
+        elif beam:
+            dCl_beam = dCl * self.Beam_kSZ(l,zi)**2
+            return tc.trapz(tc.trapz(dCl_beam, mu_list, dim=-1), kk_list, dim=-1)
+            
+        else:
+            return tc.trapz(tc.trapz(dCl, mu_list, dim=-1), kk_list, dim=-1)
+
+    def dCl_kSZ_mine(self):
+        return 0
+    
+    def dCl_HI(self):
+        return 0
 
 
 
