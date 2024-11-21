@@ -10,3 +10,4 @@ __pycache__/*
 # test and debug files
 test.ipynb
 classtest.ipynb
+testdata.npy
