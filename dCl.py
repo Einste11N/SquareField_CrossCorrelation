@@ -123,6 +123,120 @@ class Cl_kSZ2_HI2():
         return dCl_res
 
 
+    def dCl_l1(self, zi, l, l1, pz=1e-8, l_min = 1, l_max = 800, N_l = 1600, N_theta = 900, dim=3, theta = tc.pi / 2.):
+        """Evaluare the integrand, dCl, as a function of z, l and l_1.
+
+        Here we sum over theta_1, l_2, and theta_2. To get the final C_l result, one has to integrate dCl over chi and l_1, for a given l.
+
+        Input
+        -----
+        `z` : float. 
+            The redshift. 
+
+        `l` : float. 
+            The moment for C_l. Don't need to be an integer since we are in flat-sky approximation.
+
+        `l1` : float.
+            The norm of \\vec{l}_1.
+
+        """
+        ##################################################
+        # Redefine the inputs as tc.tensors
+        l = tc.tensor([l])
+        l1 = tc.tensor([l1])
+        pz = tc.tensor([pz])
+
+        # Make the mesh grid for theta_1, |l_2|, and theta_2
+        t2_list = tc.arange(N_theta + 1) * 2 * tc.pi / N_theta
+        l2_list = tc.hstack([tc.linspace(1e-4, l_min, 11)[:-1], tc.linspace(l_min, l_max, N_l)])
+
+        if dim==3:
+            t1_list = tc.linspace(0, tc.pi, N_theta//2 + 1)
+            t1, l2, t2 = tc.meshgrid(t1_list, l2_list, t2_list, indexing='ij')
+        elif dim==2:
+            t1 = tc.tensor([theta])
+            l2, t2 = tc.meshgrid(l2_list, t2_list, indexing='ij')
+        else:
+            print('dim can only be 3(default) or 2 by now')
+            raise
+
+
+        # Pre-define useful varibales and constants
+        chi = self.chi_of_z[zi]
+        chisquare = chi**2
+        lsquare = l**2
+        l1square = l1**2
+        l2square = l2**2
+        pzsquare = pz**2
+
+        l_dot_l1 = Polar_dot(l, 0., l1, t1)
+        l_dot_l2 = Polar_dot(l, 0., l2, t2)
+        l1_dot_l2 = Polar_dot(l1, t1, l2, t2)
+
+        # Pre-Evaluate the k modes
+        k_l1_p_l2_norm = tc.sqrt( (l1square + l2square + 2*l1_dot_l2) / chisquare + pzsquare )
+        k_l_p_l2_norm = tc.sqrt( (lsquare + l2square + 2*l_dot_l2) / chisquare + pzsquare )
+        k_l_m_l1_p_l2_norm = tc.sqrt( (lsquare + l1square + l2square - 2*l_dot_l1 + 2*l_dot_l2 - 2*l1_dot_l2) / chisquare + pzsquare )
+        k_l2 = tc.sqrt(l2square / chisquare + pzsquare)
+        # Delete redundant variables to save memory
+        del(l1_dot_l2)
+
+        # Pre-calculate the geometry factor
+        theta_l_p_l2 = Evaluate_angle(2, l, tc.tensor([0.]), l2, t2)
+        theta_l1_p_l2 = Evaluate_angle(2, l, tc.tensor([0.]), l2, t2)
+        theta_l_m_l1_p_l2 = Evaluate_angle(3, l, tc.tensor([0.]), -l1, t1, l2, t2)
+
+        # Pre-calculate the matter power spectrum
+        P_l1_p_l2_norm = self.Power_matter_1d(k_l1_p_l2_norm, zi)
+        P_l_p_l2_norm = self.Power_matter_1d(k_l_p_l2_norm, zi)
+        P_l2 = self.Power_matter_1d(k_l2, zi)
+        P_l_m_l1_p_l2_norm = self.Power_matter_1d(k_l_m_l1_p_l2_norm, zi)
+       
+
+        ##################################################
+        # Evaluate the integrand
+        # Initialization
+        dCl_tot = tc.zeros_like(t2)
+
+        # Contribution originate from each term in Wick Theorem
+        # Term 5 and Term 6
+        dCl  = tc.cos(theta_l_p_l2 - t2)
+        dCl *= P_l1_p_l2_norm * self.bias_electron(k_l1_p_l2_norm,zi)**2 + P_l_m_l1_p_l2_norm * self.bias_electron(k_l_m_l1_p_l2_norm,zi)**2
+        dCl *= P_l_p_l2_norm        * self.bias_velocity(k_l_p_l2_norm,zi)      * self.bias_HI(k_l_p_l2_norm,zi)
+        dCl *= P_l2                 * self.bias_velocity(k_l2,zi)               * self.bias_HI(k_l2,zi)
+        dCl_tot += dCl
+        # Term 8 and Term 10
+        dCl  = tc.cos(theta_l_p_l2 - theta_l1_p_l2) * P_l_m_l1_p_l2_norm \
+                                    * self.bias_electron(k_l_m_l1_p_l2_norm,zi) * self.bias_velocity(k_l_m_l1_p_l2_norm,zi)
+        dCl += tc.cos(theta_l1_p_l2 - t2) * P_l1_p_l2_norm \
+                                    * self.bias_electron(k_l1_p_l2_norm,zi)     * self.bias_velocity(k_l1_p_l2_norm,zi)
+        dCl *= P_l_p_l2_norm        * self.bias_electron(k_l_p_l2_norm,zi)      * self.bias_HI(k_l_p_l2_norm,zi)
+        dCl *= P_l2                 * self.bias_velocity(k_l2,zi)               * self.bias_HI(k_l2,zi)
+        dCl_tot -= dCl
+        # Term 9 and Term 13
+        dCl  = tc.cos(theta_l_m_l1_p_l2 - t2) * P_l1_p_l2_norm \
+                                    * self.bias_electron(k_l1_p_l2_norm,zi)     * self.bias_velocity(k_l1_p_l2_norm,zi)
+        dCl += tc.cos(theta_l_m_l1_p_l2 - theta_l_p_l2) * P_l_m_l1_p_l2_norm \
+                                    * self.bias_electron(k_l_m_l1_p_l2_norm,zi) * self.bias_velocity(k_l_m_l1_p_l2_norm,zi)
+        dCl *= P_l_p_l2_norm        * self.bias_velocity(k_l_p_l2_norm,zi)      * self.bias_HI(k_l_p_l2_norm,zi)
+        dCl *= P_l2                 * self.bias_electron(k_l2,zi)               * self.bias_HI(k_l2,zi)
+        dCl_tot -= dCl 
+
+        # Delete redundant variables to save memory
+        del(P_l1_p_l2_norm, P_l_p_l2_norm, P_l2, P_l_m_l1_p_l2_norm, theta_l_p_l2, theta_l1_p_l2, theta_l_m_l1_p_l2)
+
+        # The beam functions and the metric determinant contribution
+        l_m_l1_norm = tc.sqrt( (lsquare + l1square - 2*l_dot_l1).abs() )
+        dCl_tot *= l1 * l2 * self.Beam_kSZ(l_m_l1_norm,zi) * self.Beam_kSZ(l1,zi) * self.Beam_HI(l,zi)
+
+        if dim==3:
+            dCl_res = tc.trapz(tc.trapz(tc.trapz(dCl_tot, t2_list, dim=-1), l2_list, dim=-1), t1_list, dim=-1)
+        else:
+            dCl_res = tc.trapz(tc.trapz(dCl_tot, t2_list, dim=-1), l2_list, dim=-1)
+
+        return dCl_res
+    
+
     def dCl_lm_Term11(self, zi, l, lm, pz=1e-8, l_min = 1, l_max = 600, N_l = 1500, N_theta = 240):
         '''
         Integrand for Term 11, with parameter redefine ``lp = (l2 + l1) / 2``, and ``lm = (l2 - l1) / 2``
@@ -177,13 +291,14 @@ class Cl_kSZ2_HI2():
 
         ##################################################
         # Geometric factor
-        theta_l_m_lp_p_lm = Evaluate_angle(3, l, tc.tensor([0.]), -lp, tp, lm, tm)
-        theta_lp_m_lm = Evaluate_angle(2, lp, tp, -lm, tm)
+        # theta_l_m_lp_p_lm = Evaluate_angle(3, l, tc.tensor([0.]), -lp, tp, lm, tm)
+        # theta_lp_m_lm = Evaluate_angle(2, lp, tp, -lm, tm)
 
-        geo = (tc.cos(theta_l_m_lp_p_lm - lp))**2 + (tc.cos(theta_lp_m_lm - lp))**2 
-        geo = geo - tc.cos(theta_l_m_lp_p_lm - lp) * tc.cos(theta_lp_m_lm - lp) * tc.cos(theta_l_m_lp_p_lm - theta_lp_m_lm)
+        # geo = (tc.cos(theta_l_m_lp_p_lm - lp))**2 + (tc.cos(theta_lp_m_lm - lp))**2 
+        # geo = geo - tc.cos(theta_l_m_lp_p_lm - lp) * tc.cos(theta_lp_m_lm - lp) * tc.cos(theta_l_m_lp_p_lm - theta_lp_m_lm)
 
-        dCl *= 1 - geo * 2*lp / tc.sqrt( 4 * lpsquare +  chisquare * pzsquare)
+        # dCl *= 1 - geo * 2*lp / tc.sqrt( 4 * lpsquare +  chisquare * pzsquare)
+        dCl *= chisquare * pzsquare / ( 4 * lpsquare +  chisquare * pzsquare)
 
         ##################################################
         # The beam functions and the metric determinant contribution
@@ -250,13 +365,14 @@ class Cl_kSZ2_HI2():
 
         ##################################################
         # Geometric factor
-        theta_l_m_lp_p_lm = Evaluate_angle(3, l/2., tc.tensor([0.]), -lp, tp, Lm, Tm)
-        theta_lp_m_lm =     Evaluate_angle(3, l/2., tc.tensor([0.]), lp, tp, -Lm, Tm)
+        # theta_l_m_lp_p_lm = Evaluate_angle(3, l/2., tc.tensor([0.]), -lp, tp, Lm, Tm)
+        # theta_lp_m_lm =     Evaluate_angle(3, l/2., tc.tensor([0.]), lp, tp, -Lm, Tm)
 
-        geo = (tc.cos(theta_l_m_lp_p_lm - Tm))**2 + (tc.cos(theta_lp_m_lm - Tm))**2 
-        geo = geo - tc.cos(theta_l_m_lp_p_lm - Tm) * tc.cos(theta_lp_m_lm - Tm) * tc.cos(theta_l_m_lp_p_lm - theta_lp_m_lm)
+        # geo = (tc.cos(theta_l_m_lp_p_lm - Tm))**2 + (tc.cos(theta_lp_m_lm - Tm))**2 
+        # geo = geo - tc.cos(theta_l_m_lp_p_lm - Tm) * tc.cos(theta_lp_m_lm - Tm) * tc.cos(theta_l_m_lp_p_lm - theta_lp_m_lm)
 
-        dCl *= 1 - geo * 2*Lm / tc.sqrt( 4 * Lmsquare + chisquare * pzsquare )
+        # dCl *= 1 - geo * 2*Lm / tc.sqrt( 4 * Lmsquare + chisquare * pzsquare )
+        dCl *=  chisquare * pzsquare / ( 4 * Lmsquare + chisquare * pzsquare )
 
         ##################################################
         # The beam functions and the metric determinant contribution
