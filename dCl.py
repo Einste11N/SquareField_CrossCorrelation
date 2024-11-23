@@ -113,15 +113,15 @@ class Cl_kSZ2_HI2():
     
     def bias_velocity(self, kh, zindex, cut_off = tc.tensor([1.e-8])):
         z_dependence = 1/(1+self.z_array[zindex]) * self.H_of_z[zindex] * self.f_of_z[zindex]
+        return z_dependence / kh
         # cut off the divergence at infrared
-        return tc.where(kh > cut_off, z_dependence / kh, z_dependence / cut_off)
+        # return tc.where(kh > cut_off, z_dependence / kh, z_dependence / cut_off)
        
     def integral_over_z(self, dCl_tot):
         # The window functions
         dCl_tot *= self.F_kSZ**2 * self.G_HI**2 * self.dchi_by_dz
         dCl_res = tc.trapz(dCl_tot, self.z_array, dim=-1)
         return dCl_res
-
 
     def dCl_l1(self, zi, l, l1, pz=1e-8, l_min = 1, l_max = 800, N_l = 1600, N_theta = 300):
         """Evaluare the integrand, dCl, as a function of z, l and l_1.
