@@ -36,7 +36,6 @@ class Cl_kSZ2_HI2():
         self.z_list = z             # Total redshift array that we are interested in
         self.z_array = tc.tensor(z)
         self.Pm = tc.tensor(Pm)     # Matter power spectrum
-        self.Pm = tc.tensor(Pm)     # Matter power spectrum
 
         # Functions of redshift
         self.H_of_z = tc.tensor(backgrounds.hubble_parameter(z)) / sc.c     # Hubble parameter over c, in unit h/Mpc
@@ -81,16 +80,7 @@ class Cl_kSZ2_HI2():
         Pm_tot = tc.hstack([Pm_infared, Pm[:, 1:]])
 
         return k_tot, Pm_tot
-        
-    def Growth_Rate_of_z(self, backgrounds, itp_order):
-        '''
-        Get the interpolation function for logarithmic growth rate f, 
-        defined as f:=d(ln D)/d(ln a)
-        '''
-        # Since the growth rate almost does not vary with momentum scale, we fix kh=0.01 to get f
-        f_of_z = backgrounds.get_redshift_evolution([0.01], self.z_list, ['growth'])
-        return interp1d(self.z_list, np.array(f_of_z).flatten(), kind = itp_order)
-    
+
     def Power_matter_1d(self, kh, zindex):
         return torch_interp1d(self.kh_array_itp, (self.Pm_itp)[zindex], kh)
 
@@ -118,7 +108,7 @@ class Cl_kSZ2_HI2():
         # cut off the divergence at infrared
         # return tc.where(kh > cut_off, z_dependence / kh, z_dependence / cut_off)
        
-    def integral_over_z(self, dCl_tot):
+    def integral_over_z(self, dCl_tot): # TO BE REVISED
         # The window functions
         dCl_tot *= self.F_kSZ**2 * self.G_HI**2 * self.dchi_by_dz
         dCl_res = tc.trapz(dCl_tot, self.z_array, dim=-1)
@@ -479,11 +469,86 @@ class Cl_kSZ2_HI2():
         else:
             return dCl_res
 
+    def dCl_HI(self):
+        return 0
 
-    def dCl_kSZ(self, zi, l, l_min = 1, l_max = 800, N_l = 1600, N_mu = 200, beam=True):
+
+
+class Cl_kSZ2():
+
+    def __init__(self, zmax = 10, Nz = 100, Tb = 1.8e-4, H0 = 67.75, ombh2 = 0.022):
+        ##################################################s
+        # Define the cosmological parameters
+        z_array = tc.linspace(0, zmax, Nz)
+        params = camb.CAMBparams()
+        params.set_cosmology(H0=H0, ombh2=ombh2)
+        params.set_matter_power(redshifts = z_array, kmax=10, nonlinear=True)
+        results = camb.get_results(params)
+        backgrounds = camb.get_background(params)
+
+        # Calculate the background evolution and results
+        kh, z, Pm = results.get_matter_power_spectrum(minkh=1e-4, maxkh=10, npoints = 500, var1='delta_tot', var2='delta_tot')
+        Xe_of_z = np.array(backgrounds.get_background_redshift_evolution(z_array, ['x_e'], format='array')).flatten()
+        chi_of_z = np.array(results.comoving_radial_distance(z_array))
+
+        ##################################################
+        # Store the variables that we are interested in
+
+        # Constant scalars and arrays
+        self.TCMB = params.TCMB     # CMB temperature 2.7K
+        self.Tb = Tb                # HI brightness temperature, in unite mK
+        self.kh_list = kh           # Total kh array that we are interested in
+        self.kh_array = tc.tensor(kh)
+        self.z_list = z             # Total redshift array that we are interested in
+        self.z_array = tc.tensor(z)
+        self.Pm = tc.tensor(Pm)     # Matter power spectrum
+
+        # Functions of redshift
+        self.H_of_z = tc.tensor(backgrounds.hubble_parameter(z)) / sc.c     # Hubble parameter over c, in unit h/Mpc
+        self.f_of_z = tc.tensor(                                            # Logarithmic growth rate
+            backgrounds.get_redshift_evolution([0.01], z, ['growth']) ).flatten()
+        self.Xe_of_z = tc.tensor(Xe_of_z)                                   # Ionized franction Xe
+        self.chi_of_z = tc.tensor(chi_of_z)                                 # Comoving distance chi, in unit Mpc/h
+        self.dchi_by_dz = 1. / self.H_of_z                                  # Comoving distance growth rate dchi/dz
+        self.visibility_of_z = self.Xe_of_z * (1+self.z_array)**2           # Visibility function g(z) of kSZ effect
+        self.F_kSZ = self.visibility_of_z / self.chi_of_z**2                # F_kSZ, propto visibility function of kSZ
+        self.bv_of_z = 1/(1+self.z_array) * self.H_of_z * self.f_of_z       # aHf, z-dependence part of velocity bias
+
+        # Save the cosmological model, for checking the result
+        self.results = results
+        self.BGEvolution = backgrounds
+
+        # Instruments' properties
+        theta_FWHM = 1/60 # in unit deg
+        self.SIGMA_KSZ2 = (np.pi/180 * theta_FWHM)**2 / 8 / np.log(2)
+        self.SIGMA_KSZ_MEAN2 = (np.pi/180 * theta_FWHM)**2 / 8 / np.log(2)
+
+        # Arrays used for matter power spectrum interpolation
+        # adding infrared asymptotic behavior (P proportional to k)
+        self.kh_array_itp, self.Pm_itp = self.Infrared_cutoff()
+        
+    def Infrared_cutoff(self, N_add = 5, cut_off = tc.tensor([1.e-8])):
+        kh = self.kh_list
+        z = self.z_list
+        Pm = self.Pm
+
+        k_array_extra = tc.linspace(0., kh[0], N_add)
+        k_array_infrared = deepcopy(k_array_extra)
+        k_array_infrared[0] = cut_off
+        Pm_infared = k_array_infrared.repeat(len(z)).reshape([len(z), N_add]) * Pm[:, :1] / kh[0]
+
+        k_tot = tc.hstack([k_array_extra, tc.tensor(kh[1:])])
+        Pm_tot = tc.hstack([Pm_infared, Pm[:, 1:]])
+
+        return k_tot, Pm_tot
+    
+    def Power_matter_2d(self, z, kh):
+        return torch_interp2d(self.z_array, self.kh_array_itp, self.Pm_itp, z, kh)
+
+    def dCl_kSZ(self, l, l_min = 1, l_max = 1000, N_l = 2000, N_mu = 200, beam=True):
         ##################################################
         # Redefine the inputs as tc.tensors and make the meshgrid
-        chi = self.chi_of_z[zi]
+        chi = self.chi_of_z
         k = tc.tensor([l]) / chi
         kk_list = tc.hstack([tc.linspace(1e-4, l_min, 11)[:-1], tc.linspace(l_min, l_max, N_l)]) / chi
         mu_list = tc.linspace(-1, 1, N_mu)
@@ -515,9 +580,8 @@ class Cl_kSZ2_HI2():
         else:
             return tc.trapz(tc.trapz(dCl, mu_list, dim=-1), kk_list, dim=-1)
 
-    def dCl_HI(self):
+    def dCl_kSZ2(self):
         return 0
-
 
 
 def Polar_dot(lx, thetax, ly, thetay):
@@ -541,16 +605,16 @@ def Evaluate_angle(N_vec, *vectors):
         
         return tc.atan2(l_y, l_x)
     
-def torch_interp1d(x, y, x_query):
+def torch_interp1d(x, y, x_new):
 
-    indices = tc.searchsorted(x, x_query) - 1
+    indices = tc.searchsorted(x, x_new) - 1
     indices = tc.clamp(indices, 0, len(x) - 2)
 
     x0, x1 = x[indices], x[indices + 1]
     y0, y1 = y[indices], y[indices + 1]
 
     slope = (y1 - y0) / (x1 - x0)
-    y_query = y0 + slope * (x_query - x0)
+    y_query = y0 + slope * (x_new - x0)
     
     return y_query
 
