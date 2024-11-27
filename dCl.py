@@ -48,10 +48,11 @@ class Cl_kSZ2_HI2():
         self.Pm = tc.tensor(Pm)     # Matter power spectrum
 
         # Functions of redshift
-        self.H_of_z = tc.tensor(backgrounds.hubble_parameter(z)) / sc.c     # Hubble parameter over c, in unit h/Mpc
+        self.H_of_z = tc.tensor(
+            backgrounds.hubble_parameter(z)) / (sc.c/1000.)                 # Hubble parameter over c, in unit Mpc
         self.f_of_z = tc.tensor(f_of_z)                                     # Logarithmic growth rate
         self.Xe_of_z = tc.tensor(Xe_of_z)                                   # Ionized franction Xe
-        self.chi_of_z = tc.tensor(chi_of_z)                                 # Comoving distance chi, in unit Mpc/h
+        self.chi_of_z = tc.tensor(chi_of_z)                                 # Comoving distance chi, in unit Mpc
         self.dchi_by_dz = 1. / self.H_of_z                                  # Comoving distance growth rate dchi/dz
         self.visibility_of_z = self.Xe_of_z * (1+self.z_array)**2           # Visibility function g(z) of kSZ effect
         self.W_HI = 1 / (z[-1] - z[0])                                      # Window function of HI observation
@@ -172,7 +173,7 @@ class Cl_kSZ2_HI2():
         Geo -= 1 / (k_l_p_lm_p_lp_norm * k_2lp)**2          # Term 9
         Geo -= 1 / (k_lm_p_lp_norm     * k_2lp)**2          # Term 10
         Geo += 1 / k_2lp**4                                 # Term 11
-        Geo *= pzsquare
+        Geo *= pzsquare * self.bv_of_z[zi]**2
         
         dCl = dCl * Geo
 
@@ -240,7 +241,7 @@ class Cl_kSZ2_HI2():
         Geo -= 1 / (k_lm_p_lp_norm     * k_2Lm)**2          # Term 8
         Geo -= 1 / (k_l_p_lm_p_lp_norm * k_2Lm)**2          # Term 13
         Geo += 1 / k_2Lm**4                                 # Term 14
-        Geo *= pzsquare
+        Geo *= pzsquare * self.bv_of_z[zi]**2
         
         dCl = dCl * Geo
 
@@ -315,7 +316,7 @@ class Cl_kSZ2_HI2():
         Geo -= 1 / (k_l_p_lm_p_lp_norm * k_2lp)**2          # Term 9
         Geo -= 1 / (k_lm_p_lp_norm     * k_2lp)**2          # Term 10
         Geo += 1 / k_2lp**4                                 # Term 11
-        Geo *= pzsquare
+        Geo *= pzsquare * self.bv_of_z[zi]**2
         
         dCl = dCl * Geo
 
@@ -335,10 +336,11 @@ class Cl_kSZ2_HI2():
                 dCl_res_nobeam = tc.trapz(tc.trapz(dCl_nobeam, tp_list, dim=-1), lp_list, dim=-1)
                 dCl_res_beam = tc.trapz(tc.trapz(dCl_beam, tp_list, dim=-1), lp_list, dim=-1)
 
+            if resprint:
+                print(dCl_res_nobeam, '    ', dCl_res_beam)
+                
             if debug:
-                if resprint:
-                    print(dCl_res_nobeam, '    ', dCl_res_beam)
-                return dCl_res_nobeam, dCl_res_beam, dCl_nobeam, dCl_beam, lp, tp
+                return dCl_res_nobeam, dCl_res_beam, dCl_nobeam, dCl_beam, Geo, lp, tp
             else:
                 return dCl_res_nobeam, dCl_res_beam
 
@@ -353,10 +355,11 @@ class Cl_kSZ2_HI2():
         else:
             dCl_res = tc.trapz(tc.trapz(dCl, tp_list, dim=-1), lp_list, dim=-1)
         
+        if resprint:
+            print(dCl_res)
+        
         if debug:
-            if resprint:
-                print(dCl_res)
-            return dCl_res, dCl, lp, tp
+            return dCl_res, dCl, Geo, lp, tp
         else:
             return dCl_res
 
@@ -416,7 +419,7 @@ class Cl_kSZ2_HI2():
         Geo -= 1 / (k_lm_p_lp_norm     * k_2Lm)**2          # Term 8
         Geo -= 1 / (k_l_p_lm_p_lp_norm * k_2Lm)**2          # Term 13
         Geo += 1 / k_2Lm**4                                 # Term 14
-        Geo *= pzsquare
+        Geo *= pzsquare * self.bv_of_z[zi]**2
         
         dCl = dCl * Geo
         
@@ -439,10 +442,11 @@ class Cl_kSZ2_HI2():
                 dCl_res_nobeam = tc.trapz(tc.trapz(dCl_nobeam, Tm_list, dim=-1), Lm_list, dim=-1)
                 dCl_res_beam = tc.trapz(tc.trapz(dCl_beam, Tm_list, dim=-1), Lm_list, dim=-1)
             
+            if resprint:
+                print(dCl_res_nobeam, '    ', dCl_res_beam)
+
             if debug:
-                if resprint:
-                    print(dCl_res_nobeam, '    ', dCl_res_beam)
-                return dCl_res_nobeam, dCl_res_beam, dCl_nobeam, dCl_beam, Lm, Tm
+                return dCl_res_nobeam, dCl_res_beam, dCl_nobeam, dCl_beam, Geo, Lm, Tm
             else:
                 return dCl_res_nobeam, dCl_res_beam
 
@@ -456,10 +460,10 @@ class Cl_kSZ2_HI2():
         else:
             dCl_res = tc.trapz(tc.trapz(dCl, Tm_list, dim=-1), Lm_list, dim=-1)
 
+        if resprint:
+            print(dCl_res)
         if debug:
-            if resprint:
-                print(dCl_res)
-            return dCl_res, dCl, Lm, Tm
+            return dCl_res, dCl, Geo, Lm, Tm
         else:
             return dCl_res
 
@@ -504,7 +508,7 @@ class Cl_kSZ2():
             backgrounds.hubble_parameter(z)) / (sc.c/1000.)             # Hubble parameter over c, in unit Mpc
         self.f_of_z = tc.tensor(f_of_z)                                 # Logarithmic growth rate
         self.Xe_of_z = tc.tensor(Xe_of_z)                               # Ionized franction Xe
-        self.chi_of_z = tc.tensor(chi_of_z)                             # Comoving distance chi, in unit Mpc/h
+        self.chi_of_z = tc.tensor(chi_of_z)                             # Comoving distance chi, in unit Mpc
         self.dchi_by_dz = 1. / self.H_of_z                              # Comoving distance growth rate dchi/dz
 
         self.dtau_dz = NE * self.Xe_of_z * (1 + self.z_array**2) / self.H_of_z  # dtau / dz
