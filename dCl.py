@@ -124,7 +124,7 @@ class Cl_kSZ2_HI2():
         dCl_res = tc.trapz(dCl_tot, self.z_array, dim=-1)
         return dCl_res
 
-    def dCl_lm_Term5(self, zi, l, lm, pz=1e-8, l_min = 1, l_max = 600, N_l = 1500, N_theta = 240):
+    def dCl_lm_Term5(self, zi, l, lm, pz=1e-8, l_min = 1, l_max = 800, N_l = 1500, N_theta = 240):
         '''
             Integrand for Term 5, 9, 10, 11, with parameter redefine ``lp = (l2 + l1) / 2``, and ``lm = (l2 - l1) / 2``, or inversely ``l2 = lp + lm``, and ``l1 = lp - lm``
 
@@ -192,7 +192,7 @@ class Cl_kSZ2_HI2():
 
         return dCl_res_beam #, dCl_res_nobeam
         
-    def dCl_lp_Term6(self, zi, l, lp, pz=1e-8, l_min = 1, l_max = 600, N_l = 1500, N_theta = 240):
+    def dCl_lp_Term6(self, zi, l, lp, pz=1e-8, l_min = 1, l_max = 800, N_l = 1500, N_theta = 240):
         '''
             Integrand for Term 6, 8, 13, 14, with parameter redefine ``lp = (l2 + l1) / 2``, and ``Lm = (l - l1 + l2) / 2 = l/2 + lm``, or inversely ``l2 = lp + lm = lp + Lm - l/2``, and ``l1 = lp - lm = lp - Lm + l/2``
 
