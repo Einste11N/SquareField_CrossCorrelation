@@ -7,6 +7,15 @@ from scipy.interpolate import interp1d
 import camb
 from copy import deepcopy
 
+'''
+    NE is given by $\sigma_T \bar{n}_{b,0}$ with
+    ------------------------
+    sigma_T = 6.652e-29 m^2
+    n_b0    =  0.2515 / m^3  from CMB
+               0.2485 / m^3  from BBN
+'''
+NE = 5.13e-7  # in unit 1/Mpc
+
 
 class Cl_kSZ2_HI2():
 
@@ -23,6 +32,7 @@ class Cl_kSZ2_HI2():
         # Calculate the background evolution and results
         kh, z, Pm = results.get_matter_power_spectrum(minkh=1e-4, maxkh=10, npoints = 500, var1='delta_tot', var2='delta_tot')
         Xe_of_z = np.array(backgrounds.get_background_redshift_evolution(z_array, ['x_e'], format='array')).flatten()
+        f_of_z = np.array(backgrounds.get_redshift_evolution([0.01], z, ['growth'])).flatten()
         chi_of_z = np.array(results.comoving_radial_distance(z_array))
 
         ##################################################
@@ -39,8 +49,7 @@ class Cl_kSZ2_HI2():
 
         # Functions of redshift
         self.H_of_z = tc.tensor(backgrounds.hubble_parameter(z)) / sc.c     # Hubble parameter over c, in unit h/Mpc
-        self.f_of_z = tc.tensor(                                            # Logarithmic growth rate
-            backgrounds.get_redshift_evolution([0.01], z, ['growth']) ).flatten()
+        self.f_of_z = tc.tensor(f_of_z)                                     # Logarithmic growth rate
         self.Xe_of_z = tc.tensor(Xe_of_z)                                   # Ionized franction Xe
         self.chi_of_z = tc.tensor(chi_of_z)                                 # Comoving distance chi, in unit Mpc/h
         self.dchi_by_dz = 1. / self.H_of_z                                  # Comoving distance growth rate dchi/dz
@@ -167,12 +176,15 @@ class Cl_kSZ2_HI2():
         
         dCl = dCl * Geo
 
+        # Delete redundant variables to save memory
+        del(k_l_p_lm_p_lp_norm, k_lm_p_lp_norm, k_2lp)
+
         ##################################################
         # The beam functions and the metric determinant contribution
-        # l_m_lp_p_lm_norm =  tc.sqrt( (lsquare + lmsquare + lpsquare + 2*l_dot_lm - 2*l_dot_lp - 2*lm_dot_lp).abs() )
-        # lp_m_lm_norm =      tc.sqrt( (lmsquare + lpsquare - 2*lm_dot_lp).abs() )
+        l_m_lp_p_lm_norm =  tc.sqrt( (lsquare + lmsquare + lpsquare + 2*l_dot_lm - 2*l_dot_lp - 2*lm_dot_lp).abs() )
+        lp_m_lm_norm =      tc.sqrt( (lmsquare + lpsquare - 2*lm_dot_lp).abs() )
         dCl_nobeam = dCl * 4 * lm * lp
-        dCl_beam = dCl_nobeam * self.Beam_HI(l) # * self.Beam_kSZ(l_m_lp_p_lm_norm) * self.Beam_kSZ(lp_m_lm_norm) 
+        dCl_beam = dCl_nobeam * self.Beam_HI(l) * self.Beam_kSZ(l_m_lp_p_lm_norm) * self.Beam_kSZ(lp_m_lm_norm) 
 
         # dCl_res_nobeam = tc.trapz(tc.trapz(tc.trapz(dCl_nobeam, tp_list, dim=-1), lp_list, dim=-1), tm_list, dim=-1)
         dCl_res_beam = tc.trapz(tc.trapz(tc.trapz(dCl_beam, tp_list, dim=-1), lp_list, dim=-1), tm_list, dim=-1)
@@ -232,24 +244,15 @@ class Cl_kSZ2_HI2():
         
         dCl = dCl * Geo
 
-        ##################################################
-        # Evaluate the integrand
-        # Term 14 contribution
-        dCl  = P_l_p_lm_p_lp_norm   * self.bias_electron(k_l_p_lm_p_lp_norm,zi) * self.bias_HI(k_l_p_lm_p_lp_norm,zi)
-        dCl *= P_lm_p_lp_norm       * self.bias_electron(k_lm_p_lp_norm,zi)     * self.bias_HI(k_lm_p_lp_norm,zi)
-        dCl *= P_2Lm * self.bias_velocity(k_2Lm, zi)**2
-
-        dCl *=  chisquare * pzsquare / ( 4 * Lmsquare + chisquare * pzsquare )
-        
         # Delete redundant variables to save memory
         del(k_l_p_lm_p_lp_norm, k_lm_p_lp_norm, k_2Lm)
 
         ##################################################
         # The beam functions and the metric determinant contribution
-        # l_m_lp_p_lm_norm =  tc.sqrt( (lsquare/4 + Lmsquare + lpsquare + l_dot_Lm - l_dot_lp - 2*lp_dot_Lm).abs() )
-        # lp_m_lm_norm =      tc.sqrt( (lsquare/4 + Lmsquare + lpsquare - l_dot_Lm + l_dot_lp - 2*lp_dot_Lm).abs() )
+        l_m_lp_p_lm_norm =  tc.sqrt( (lsquare/4 + Lmsquare + lpsquare + l_dot_Lm - l_dot_lp - 2*lp_dot_Lm).abs() )
+        lp_m_lm_norm =      tc.sqrt( (lsquare/4 + Lmsquare + lpsquare - l_dot_Lm + l_dot_lp - 2*lp_dot_Lm).abs() )
         dCl_nobeam = dCl * 4 * Lm * lp
-        dCl_beam = dCl_nobeam * self.Beam_HI(l) # * self.Beam_kSZ(l_m_lp_p_lm_norm) * self.Beam_kSZ(lp_m_lm_norm) 
+        dCl_beam = dCl_nobeam * self.Beam_HI(l) * self.Beam_kSZ(l_m_lp_p_lm_norm) * self.Beam_kSZ(lp_m_lm_norm) 
 
         # dCl_res_nobeam = tc.trapz(tc.trapz(tc.trapz(dCl_nobeam, Tm_list, dim=-1), Lm_list, dim=-1), tp_list, dim=-1)
         dCl_res_beam = tc.trapz(tc.trapz(tc.trapz(dCl_beam, Tm_list, dim=-1), Lm_list, dim=-1), tp_list, dim=-1)
@@ -416,15 +419,6 @@ class Cl_kSZ2_HI2():
         Geo *= pzsquare
         
         dCl = dCl * Geo
-
-        ##################################################
-        # Evaluate the integrand
-        # Term 14 contribution
-        dCl  = P_l_p_lm_p_lp_norm   * self.bias_electron(k_l_p_lm_p_lp_norm,zi) * self.bias_HI(k_l_p_lm_p_lp_norm,zi)
-        dCl *= P_lm_p_lp_norm       * self.bias_electron(k_lm_p_lp_norm,zi)     * self.bias_HI(k_lm_p_lp_norm,zi)
-        dCl *= P_2Lm * self.bias_velocity(k_2Lm, zi)**2
-
-        dCl *=  chisquare * pzsquare / ( 4 * Lmsquare + chisquare * pzsquare )
         
         # Delete redundant variables to save memory
         del(k_l_p_lm_p_lp_norm, k_lm_p_lp_norm, k_2Lm)
@@ -476,10 +470,11 @@ class Cl_kSZ2_HI2():
 
 class Cl_kSZ2():
 
-    def __init__(self, zmax = 10, Nz = 100, Tb = 1.8e-4, H0 = 67.75, ombh2 = 0.022):
+    def __init__(self, zmax = 10, zmin = 1e-4, Nz = 100, Tb = 1.8e-4, H0 = 67.75, ombh2 = 0.022):
         ##################################################s
         # Define the cosmological parameters
-        z_array = tc.linspace(0, zmax, Nz)
+
+        z_array = tc.tensor(np.hstack([np.geomspace(zmin, 0.1, 10)[:-1], np.linspace(0.1, zmax, Nz, endpoint=True)]))
         params = camb.CAMBparams()
         params.set_cosmology(H0=H0, ombh2=ombh2)
         params.set_matter_power(redshifts = z_array, kmax=10, nonlinear=True)
@@ -489,6 +484,7 @@ class Cl_kSZ2():
         # Calculate the background evolution and results
         kh, z, Pm = results.get_matter_power_spectrum(minkh=1e-4, maxkh=10, npoints = 500, var1='delta_tot', var2='delta_tot')
         Xe_of_z = np.array(backgrounds.get_background_redshift_evolution(z_array, ['x_e'], format='array')).flatten()
+        f_of_z = np.array(backgrounds.get_redshift_evolution([0.01], z, ['growth'])).flatten()
         chi_of_z = np.array(results.comoving_radial_distance(z_array))
 
         ##################################################
@@ -504,29 +500,34 @@ class Cl_kSZ2():
         self.Pm = tc.tensor(Pm)     # Matter power spectrum
 
         # Functions of redshift
-        self.H_of_z = tc.tensor(backgrounds.hubble_parameter(z)) / sc.c     # Hubble parameter over c, in unit h/Mpc
-        self.f_of_z = tc.tensor(                                            # Logarithmic growth rate
-            backgrounds.get_redshift_evolution([0.01], z, ['growth']) ).flatten()
-        self.Xe_of_z = tc.tensor(Xe_of_z)                                   # Ionized franction Xe
-        self.chi_of_z = tc.tensor(chi_of_z)                                 # Comoving distance chi, in unit Mpc/h
-        self.dchi_by_dz = 1. / self.H_of_z                                  # Comoving distance growth rate dchi/dz
-        self.visibility_of_z = self.Xe_of_z * (1+self.z_array)**2           # Visibility function g(z) of kSZ effect
-        self.F_kSZ = self.visibility_of_z / self.chi_of_z**2                # F_kSZ, propto visibility function of kSZ
-        self.bv_of_z = 1/(1+self.z_array) * self.H_of_z * self.f_of_z       # aHf, z-dependence part of velocity bias
+        self.H_of_z = tc.tensor(
+            backgrounds.hubble_parameter(z)) / (sc.c/1000.)             # Hubble parameter over c, in unit Mpc
+        self.f_of_z = tc.tensor(f_of_z)                                 # Logarithmic growth rate
+        self.Xe_of_z = tc.tensor(Xe_of_z)                               # Ionized franction Xe
+        self.chi_of_z = tc.tensor(chi_of_z)                             # Comoving distance chi, in unit Mpc/h
+        self.dchi_by_dz = 1. / self.H_of_z                              # Comoving distance growth rate dchi/dz
+
+        self.dtau_dz = NE * self.Xe_of_z * (1 + self.z_array**2) / self.H_of_z  # dtau / dz
+        self.tau_of_z = tc.hstack([ tc.tensor([0.]), 
+            tc.cumulative_trapezoid(self.dtau_dz, self.z_array, dim=-1)])       # tau, optical depth
+        self.F_of_kSZ = self.dtau_dz * tc.exp(-self.tau_of_z)           # F_of_kSZ = dtau/dz * exp(-tau)
+        self.bv_of_z = 1/(1+self.z_array) * self.H_of_z * self.f_of_z   # aHf, z-dependence part of velocity bias
 
         # Save the cosmological model, for checking the result
         self.results = results
         self.BGEvolution = backgrounds
 
         # Instruments' properties
-        theta_FWHM = 1/60 # in unit deg
+        theta_FWHM = tc.tensor([1./60.]) # in unit deg
         self.SIGMA_KSZ2 = (np.pi/180 * theta_FWHM)**2 / 8 / np.log(2)
         self.SIGMA_KSZ_MEAN2 = (np.pi/180 * theta_FWHM)**2 / 8 / np.log(2)
 
         # Arrays used for matter power spectrum interpolation
         # adding infrared asymptotic behavior (P proportional to k)
         self.kh_array_itp, self.Pm_itp = self.Infrared_cutoff()
-        
+
+    # def tau
+
     def Infrared_cutoff(self, N_add = 5, cut_off = tc.tensor([1.e-8])):
         kh = self.kh_list
         z = self.z_list
@@ -544,6 +545,15 @@ class Cl_kSZ2():
     
     def Power_matter_2d(self, z, kh):
         return torch_interp2d(self.z_array, self.kh_array_itp, self.Pm_itp, z, kh)
+
+    def Power_matter_1d(self, kh, zindex):
+        return torch_interp1d(self.kh_array_itp, (self.Pm_itp)[zindex], kh)
+
+    def Beam_kSZ(self, l, zindex=0, use_mean = False):
+        if use_mean:
+            return tc.exp(-l**2 * self.SIGMA_KSZ_MEAN2 / 2)
+        else:
+            return tc.exp(-l**2 * self.SIGMA_KSZ2 / 2)
 
     def dCl_kSZ(self, l, l_min = 1, l_max = 1000, N_l = 2000, N_mu = 200, beam=True):
         ##################################################
@@ -582,6 +592,43 @@ class Cl_kSZ2():
 
     def dCl_kSZ2(self):
         return 0
+    
+    def dCl_kSZ_test(self, zi, l, l_min = 1, l_max = 1000, N_l = 2000, N_mu = 200, beam=True):
+        ##################################################
+        # Redefine the inputs as tc.tensors and make the meshgrid
+        chi = self.chi_of_z[zi]
+        k = tc.tensor([l]) / chi
+        kk_list = tc.hstack([tc.linspace(1e-4, l_min, 11)[:-1], tc.linspace(l_min, l_max, N_l)]) / chi
+        mu_list = tc.linspace(-1, 1, N_mu)
+
+        kk, mu = tc.meshgrid(kk_list, mu_list, indexing='ij')
+        k_m_kk_norm_square = k**2 + kk**2 - 2*k*kk*mu
+
+        ##################################################
+        # Evaluation
+        dCl  = self.Power_matter_1d(kk, zi) * self.Power_matter_1d(tc.sqrt(k_m_kk_norm_square), zi)
+        dCl *= tc.pi * k * (k - 2*kk*mu) * (1 - mu**2) / k_m_kk_norm_square
+
+        z_dependence = 1/(1+self.z_array[zi]) * self.H_of_z[zi] * self.f_of_z[zi]
+        dCl *= z_dependence
+
+        ##################################################
+        # Integral
+        if beam=='both':
+            dCl_beam = dCl * self.Beam_kSZ(l,zi)**2
+
+            dCl_res_nobeam = tc.trapz(tc.trapz(dCl, mu_list, dim=-1), kk_list, dim=-1)
+            dCl_res_beam = tc.trapz(tc.trapz(dCl_beam, mu_list, dim=-1), kk_list, dim=-1)
+            return dCl_res_nobeam, dCl_res_beam
+
+        elif beam:
+            dCl_beam = dCl * self.Beam_kSZ(l,zi)**2
+            return tc.trapz(tc.trapz(dCl_beam, mu_list, dim=-1), kk_list, dim=-1)
+            
+        else:
+            return tc.trapz(tc.trapz(dCl, mu_list, dim=-1), kk_list, dim=-1)
+
+
 
 
 def Polar_dot(lx, thetax, ly, thetay):
