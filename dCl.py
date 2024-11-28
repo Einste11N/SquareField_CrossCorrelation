@@ -7,13 +7,12 @@ from scipy.interpolate import interp1d
 import camb
 from copy import deepcopy
 
-'''
-    NE is given by $\sigma_T \bar{n}_{b,0}$ with
-    ------------------------
-    sigma_T = 6.652e-29 m^2
-    n_b0    =  0.2515 / m^3  from CMB
-               0.2485 / m^3  from BBN
-'''
+
+# NE is given by $\sigma_T \bar{n}_{b,0}$ with
+# ------------------------
+# sigma_T = 6.652e-29 m^2
+# n_b0    =  0.2515 / m^3  from CMB
+#            0.2485 / m^3  from BBN
 NE = 5.13e-7  # in unit 1/Mpc
 
 
@@ -124,7 +123,7 @@ class Cl_kSZ2_HI2():
         dCl_res = tc.trapz(dCl_tot, self.z_array, dim=-1)
         return dCl_res
 
-    def dCl_lm_Term5(self, zi, l, lm, pz=1e-8, l_min = 1, l_max = 800, N_l = 1500, N_theta = 240):
+    def dCl_lm_Term5(self, zi, l, lm, pz=1e-8, l_min = 1, l_max = 500, N_l = 2000, theta_min = 0., theta_max = 2*tc.pi, N_theta = 300):
         '''
             Integrand for Term 5, 9, 10, 11, with parameter redefine ``lp = (l2 + l1) / 2``, and ``lm = (l2 - l1) / 2``, or inversely ``l2 = lp + lm``, and ``l1 = lp - lm``
 
@@ -135,10 +134,10 @@ class Cl_kSZ2_HI2():
         pz = tc.tensor([pz])
 
         # Make the mesh grid for theta_1, |l_2|, and theta_2
-        tp_list = tc.arange(N_theta + 1) * 2 * tc.pi / N_theta
-        lp_list = tc.hstack([(10**tc.linspace(-4, np.log10(l_min), 31))[:-1], tc.linspace(l_min, l_max, N_l)])
+        tp_list = tc.linspace(theta_min, theta_max, N_theta + 1)
+        lp_list = tc.hstack([(10**tc.arange(-4, np.log10(l_min), 0.1))[:-1], tc.linspace(l_min, l_max, N_l)])
 
-        tm_list = tc.linspace(0, tc.pi, N_theta//2 + 1)
+        tm_list = tc.hstack([tc.linspace(0, 0.9 * tc.pi, 25)[:-1], tc.linspace(0.9 * tc.pi, tc.pi, 6)])
         tm, lp, tp = tc.meshgrid(tm_list, lp_list, tp_list, indexing='ij')
 
         # Pre-define useful varibales and constants
@@ -192,7 +191,7 @@ class Cl_kSZ2_HI2():
 
         return dCl_res_beam #, dCl_res_nobeam
         
-    def dCl_lp_Term6(self, zi, l, lp, pz=1e-8, l_min = 1, l_max = 800, N_l = 1500, N_theta = 240):
+    def dCl_lp_Term6(self, zi, l, lp, pz=1e-8, l_min = 1, l_max = 500, N_l = 2000, theta_min = 0., theta_max = 2*tc.pi, N_theta = 300):
         '''
             Integrand for Term 6, 8, 13, 14, with parameter redefine ``lp = (l2 + l1) / 2``, and ``Lm = (l - l1 + l2) / 2 = l/2 + lm``, or inversely ``l2 = lp + lm = lp + Lm - l/2``, and ``l1 = lp - lm = lp - Lm + l/2``
 
@@ -203,10 +202,10 @@ class Cl_kSZ2_HI2():
         pz = tc.tensor([pz])
 
         # Make the mesh grid for theta_1, |l_2|, and theta_2
-        Tm_list = tc.arange(N_theta + 1) * 2 * tc.pi / N_theta
-        Lm_list = tc.hstack([(10**tc.linspace(-4, np.log10(l_min), 31))[:-1], tc.linspace(l_min, l_max, N_l)])
+        Tm_list = tc.linspace(theta_min, theta_max, N_theta + 1)
+        Lm_list = tc.hstack([(10**tc.arange(-4, np.log10(l_min), 0.1))[:-1], tc.linspace(l_min, l_max, N_l)])
 
-        tp_list = tc.linspace(0, tc.pi, N_theta//2 + 1)
+        tp_list = tc.hstack([tc.linspace(0, 0.9 * tc.pi, 25)[:-1], tc.linspace(0.9 * tc.pi, tc.pi, 6)])
         tp, Lm, Tm = tc.meshgrid(tp_list, Lm_list, Tm_list, indexing='ij')
 
         # Pre-define useful varibales and constants
@@ -260,7 +259,7 @@ class Cl_kSZ2_HI2():
 
         return dCl_res_beam #, dCl_res_nobeam
 
-    def dCl_lm_Term5_test(self, zi, l, lm, pz=1e-8, l_min = 1, l_max = 800, N_l = 1600, N_theta = 240, dim=2, theta = tc.pi / 3., debug=True, beam=True, resprint=True):
+    def dCl_lm_Term5_test(self, zi, l, lm, pz=1e-8, l_min = 1, l_max = 500, N_l = 2000, theta_min = 0., theta_max = 2*tc.pi, N_theta = 240, dim=2, theta = tc.pi / 3., debug=True, beam=True, resprint=True):
         '''
             Integrand for Term 5, 9, 10, 11, with parameter redefine ``lp = (l2 + l1) / 2``, and ``lm = (l2 - l1) / 2``, or inversely ``l2 = lp + lm``, and ``l1 = lp - lm``
 
@@ -271,11 +270,11 @@ class Cl_kSZ2_HI2():
         pz = tc.tensor([pz])
 
         # Make the mesh grid for theta_1, |l_2|, and theta_2
-        tp_list = tc.arange(N_theta + 1) * 2 * tc.pi / N_theta
-        lp_list = tc.hstack([(10**tc.linspace(-4, np.log10(l_min), 31))[:-1], tc.linspace(l_min, l_max, N_l)])
+        tp_list = tc.linspace(theta_min, theta_max, N_theta + 1)
+        lp_list = tc.hstack([(10**tc.arange(-4, np.log10(l_min), 0.1))[:-1], tc.linspace(l_min, l_max, N_l)])
 
         if dim==3:
-            tm_list = tc.linspace(0, tc.pi, N_theta//2 + 1)
+            tm_list = tc.hstack([tc.linspace(0, 0.9 * tc.pi, 25)[:-1], tc.linspace(0.9 * tc.pi, tc.pi, 6)])
             tm, lp, tp = tc.meshgrid(tm_list, lp_list, tp_list, indexing='ij')
         elif dim==2:
             tm = tc.tensor([theta])
@@ -363,7 +362,7 @@ class Cl_kSZ2_HI2():
         else:
             return dCl_res
 
-    def dCl_lp_Term6_test(self, zi, l, lp, pz=1e-8, l_min = 1, l_max = 800, N_l = 1600, N_theta = 240, dim=2, theta = tc.pi / 3., debug=True, beam=True, resprint=True):
+    def dCl_lp_Term6_test(self, zi, l, lp, pz=1e-8, l_min = 1, l_max = 500, N_l = 2000, theta_min = 0., theta_max = 2*tc.pi, N_theta = 240, dim=2, theta = tc.pi / 3., debug=True, beam=True, resprint=True):
         '''
             Integrand for Term 6, 8, 13, 14, with parameter redefine ``lp = (l2 + l1) / 2``, and ``Lm = (l - l1 + l2) / 2 = l/2 + lm``, or inversely ``l2 = lp + lm = lp + Lm - l/2``, and ``l1 = lp - lm = lp - Lm + l/2``
 
@@ -374,11 +373,11 @@ class Cl_kSZ2_HI2():
         pz = tc.tensor([pz])
 
         # Make the mesh grid for theta_1, |l_2|, and theta_2
-        Tm_list = tc.arange(N_theta + 1) * 2 * tc.pi / N_theta
-        Lm_list = tc.hstack([(10**tc.linspace(-4, np.log10(l_min), 31))[:-1], tc.linspace(l_min, l_max, N_l)])
+        Tm_list = tc.linspace(theta_min, theta_max, N_theta + 1)
+        Lm_list = tc.hstack([(10**tc.arange(-4, np.log10(l_min), 0.1))[:-1], tc.linspace(l_min, l_max, N_l)])
 
         if dim==3:
-            tp_list = tc.linspace(0, tc.pi, N_theta//2 + 1)
+            tp_list = tc.hstack([tc.linspace(0, 0.9 * tc.pi, 25)[:-1], tc.linspace(0.9 * tc.pi, tc.pi, 6)])
             tp, Lm, Tm = tc.meshgrid(tp_list, Lm_list, Tm_list, indexing='ij')
         elif dim==2:
             tp = tc.tensor([theta])
@@ -559,7 +558,7 @@ class Cl_kSZ2():
         else:
             return tc.exp(-l**2 * self.SIGMA_KSZ2 / 2)
 
-    def dCl_kSZ(self, l, l_min = 1, l_max = 1000, N_l = 2000, N_mu = 200, beam=True):
+    def dCl_kSZ(self, zi, l, l_min = 1, l_max = 1000, N_l = 2000, N_mu = 200, beam=True):
         ##################################################
         # Redefine the inputs as tc.tensors and make the meshgrid
         chi = self.chi_of_z
