@@ -134,7 +134,7 @@ class Cl_kSZ2_HI2():
         pz = tc.tensor([pz])
 
         # Make the mesh grid for theta_1, |l_2|, and theta_2
-        tp_list = tc.linspace(theta_min, theta_max, 31)
+        tp_list = tc.linspace(theta_min, theta_max, N_theta + 1)
         lp_list = tc.hstack([(10**tc.arange(-4, np.log10(l_min), 0.1))[:-1], tc.linspace(l_min, l_max, N_l)])
 
         tm_list = tc.hstack([tc.linspace(0, 0.9 * tc.pi, 25)[:-1], tc.linspace(0.9 * tc.pi, tc.pi, 6)])
@@ -202,7 +202,7 @@ class Cl_kSZ2_HI2():
         pz = tc.tensor([pz])
 
         # Make the mesh grid for theta_1, |l_2|, and theta_2
-        Tm_list = tc.linspace(theta_min, theta_max, 31)
+        Tm_list = tc.linspace(theta_min, theta_max, N_theta + 1)
         Lm_list = tc.hstack([(10**tc.arange(-4, np.log10(l_min), 0.1))[:-1], tc.linspace(l_min, l_max, N_l)])
 
         tp_list = tc.hstack([tc.linspace(0, 0.9 * tc.pi, 25)[:-1], tc.linspace(0.9 * tc.pi, tc.pi, 6)])
@@ -270,7 +270,7 @@ class Cl_kSZ2_HI2():
         pz = tc.tensor([pz])
 
         # Make the mesh grid for theta_1, |l_2|, and theta_2
-        tp_list = tc.linspace(theta_min, theta_max, 31)
+        tp_list = tc.linspace(theta_min, theta_max, N_theta + 1)
         lp_list = tc.hstack([(10**tc.arange(-4, np.log10(l_min), 0.1))[:-1], tc.linspace(l_min, l_max, N_l)])
 
         if dim==3:
@@ -373,7 +373,7 @@ class Cl_kSZ2_HI2():
         pz = tc.tensor([pz])
 
         # Make the mesh grid for theta_1, |l_2|, and theta_2
-        Tm_list = tc.linspace(theta_min, theta_max, 31)
+        Tm_list = tc.linspace(theta_min, theta_max, N_theta + 1)
         Lm_list = tc.hstack([(10**tc.arange(-4, np.log10(l_min), 0.1))[:-1], tc.linspace(l_min, l_max, N_l)])
 
         if dim==3:
