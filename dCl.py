@@ -29,7 +29,7 @@ class Cl_kSZ2_HI2():
         backgrounds = camb.get_background(params)
 
         # Calculate the background evolution and results
-        kh, z, Pm = results.get_matter_power_spectrum(minkh=1e-4, maxkh=10, npoints = 500, var1='delta_tot', var2='delta_tot')
+        kh, z, Pm = results.get_matter_power_spectrum(minkh=1e-4, maxkh=100, npoints = 350, var1='delta_tot', var2='delta_tot')
         Xe_of_z = np.array(backgrounds.get_background_redshift_evolution(z_array, ['x_e'], format='array')).flatten()
         f_of_z = np.array(backgrounds.get_redshift_evolution([0.01], z, ['growth'])).flatten()
         chi_of_z = np.array(results.comoving_radial_distance(z_array))
@@ -73,25 +73,28 @@ class Cl_kSZ2_HI2():
 
         # Arrays used for matter power spectrum interpolation
         # adding infrared asymptotic behavior (P proportional to k)
-        self.kh_array_itp, self.Pm_itp = self.Infrared_cutoff()
+        self.kh_array_itp, self.Pm_itp = self.cutoff()
 
-    def Infrared_cutoff(self, N_add = 5, cut_off = tc.tensor([1.e-8])):
+    def cutoff(self, N_add = 25, ir_cut = 1.e-8, uv_cut = 1.e4):
         kh = self.kh_list
         z = self.z_list
         Pm = self.Pm
 
-        k_array_extra = tc.linspace(0., kh[0], N_add)
-        k_array_infrared = deepcopy(k_array_extra)
-        k_array_infrared[0] = cut_off
-        Pm_infared = k_array_infrared.repeat(len(z)).reshape([len(z), N_add]) * Pm[:, :1] / kh[0]
+        k_ir = tc.tensor(np.geomspace(ir_cut, kh[0], N_add))
+        Pm_ir = Pm[:, :1] * k_ir.repeat(len(z)).reshape([len(z), N_add]) / kh[0]
 
-        k_tot = tc.hstack([k_array_extra, tc.tensor(kh[1:])])
-        Pm_tot = tc.hstack([Pm_infared, Pm[:, 1:]])
+        k_uv = tc.tensor(np.geomspace(kh[-1], uv_cut, N_add))
+        Pm_uv = Pm[:, -1:] * (k_uv.repeat(len(z)).reshape([len(z), N_add]) / kh[-1])**(-3)
+
+        k_tot = tc.hstack([k_ir, tc.tensor(kh[1:-1]), k_uv])
+        Pm_tot = tc.hstack([Pm_ir, Pm[:, 1:-1], Pm_uv])
 
         return k_tot, Pm_tot
 
-    def Power_matter_1d(self, kh, zindex):
-        return torch_interp1d(self.kh_array_itp, (self.Pm_itp)[zindex], kh)
+    def Power_matter_1d(self, kh, zindex, ir_cut = 1.e-8, uv_cut = 1.e4):
+        itp = torch_interp1d(self.kh_array_itp, (self.Pm_itp)[zindex], kh)
+        power = tc.where(tc.logical_and(kh>ir_cut, kh<uv_cut), itp, 0.)
+        return power
 
     def Beam_kSZ(self, l, zindex=0, use_mean = False):
         if use_mean:
@@ -122,6 +125,7 @@ class Cl_kSZ2_HI2():
         dCl_tot *= self.F_kSZ**2 * self.G_HI**2 * self.dchi_by_dz
         dCl_res = tc.trapz(dCl_tot, self.z_array, dim=-1)
         return dCl_res
+
 
     def dCl_lm_Term5(self, zi, l, lm, pz=1e-8, l_min = 1, l_max = 500, N_l = 2000, theta_min = 0., theta_max = 2*tc.pi, N_theta = 300):
         '''
@@ -190,7 +194,7 @@ class Cl_kSZ2_HI2():
         dCl_res_beam = tc.trapz(tc.trapz(tc.trapz(dCl_beam, tp_list, dim=-1), lp_list, dim=-1), tm_list, dim=-1)
 
         return dCl_res_beam #, dCl_res_nobeam
-        
+
     def dCl_lp_Term6(self, zi, l, lp, pz=1e-8, l_min = 1, l_max = 500, N_l = 2000, theta_min = 0., theta_max = 2*tc.pi, N_theta = 300):
         '''
             Integrand for Term 6, 8, 13, 14, with parameter redefine ``lp = (l2 + l1) / 2``, and ``Lm = (l - l1 + l2) / 2 = l/2 + lm``, or inversely ``l2 = lp + lm = lp + Lm - l/2``, and ``l1 = lp - lm = lp - Lm + l/2``
@@ -258,6 +262,136 @@ class Cl_kSZ2_HI2():
         dCl_res_beam = tc.trapz(tc.trapz(tc.trapz(dCl_beam, Tm_list, dim=-1), Lm_list, dim=-1), tp_list, dim=-1)
 
         return dCl_res_beam #, dCl_res_nobeam
+
+
+    def dCl_lm_Term5_2d(self, zi, l, pz, lm, tm, l_min = 1, l_max = 500, N_l = 2000, theta_min = 0., theta_max = 2*tc.pi, N_theta = 300):
+        '''
+            Integrand for Term 5, 9, 10, 11, with parameter redefine ``lp = (l2 + l1) / 2``, and ``lm = (l2 - l1) / 2``, or inversely ``l2 = lp + lm``, and ``l1 = lp - lm``
+
+            Assumming both bias for electron and for HI are equal to 1, $b_v(k)=aHf b_e / k$
+        '''
+        l = tc.tensor([l])
+        pz = tc.tensor([pz])
+        lm = tc.tensor([lm])
+        tm = tc.tensor([tm])
+
+        # Make the mesh grid for theta_1, |l_2|, and theta_2
+        tp_list = tc.linspace(theta_min, theta_max, N_theta + 1)
+        lp_list = tc.hstack([(10**tc.arange(-4, np.log10(l_min), 0.1))[:-1], tc.linspace(l_min, l_max, N_l)])
+
+        lp, tp = tc.meshgrid(lp_list, tp_list, indexing='ij')
+
+        # Pre-define useful varibales and constants
+        chisquare = self.chi_of_z[zi]**2
+        lsquare = l**2
+        lmsquare = lm**2
+        lpsquare = lp**2
+        pzsquare = pz**2
+
+        l_dot_lm = Polar_dot(l, 0., lm, tm)
+        l_dot_lp = Polar_dot(l, 0., lp, tp)
+        lm_dot_lp = Polar_dot(lm, tm, lp, tp)
+
+        # Pre-Evaluate the k modes
+        k_l_p_lm_p_lp_norm= tc.sqrt( (lsquare + lmsquare + lpsquare + 2*l_dot_lm + 2*l_dot_lp + 2*lm_dot_lp) / chisquare + pzsquare )
+        k_lm_p_lp_norm =    tc.sqrt( (lmsquare + lpsquare + 2*lm_dot_lp) / chisquare + pzsquare )
+        k_2lp = tc.sqrt( 4 * lpsquare / chisquare + pzsquare)
+        # Delete redundant variables to save memory
+        # del(l_dot_lm, l_dot_lp, lm_dot_lp)
+
+        # Pre-calculate the matter power spectrum
+        P_l_p_lm_p_lp_norm = self.Power_matter_1d(k_l_p_lm_p_lp_norm, zi)
+        P_lm_p_lp_norm = self.Power_matter_1d(k_lm_p_lp_norm, zi)
+        P_2lp = self.Power_matter_1d(k_2lp, zi)
+
+        ##################################################
+        # Evaluate the integrand
+        # Power sepctrum contribution
+        dCl = P_l_p_lm_p_lp_norm * P_lm_p_lp_norm  * P_2lp
+        # Geometric factor
+        Geo  = 1 / (k_l_p_lm_p_lp_norm * k_lm_p_lp_norm)**2 # Term 5
+        Geo -= 1 / (k_l_p_lm_p_lp_norm * k_2lp)**2          # Term 9
+        Geo -= 1 / (k_lm_p_lp_norm     * k_2lp)**2          # Term 10
+        Geo += 1 / k_2lp**4                                 # Term 11
+        Geo *= pzsquare * self.bv_of_z[zi]**2
+        
+        dCl = dCl * Geo
+
+        ##################################################
+        # The beam functions and the metric determinant contribution
+        l_m_lp_p_lm_norm =  tc.sqrt( (lsquare + lmsquare + lpsquare + 2*l_dot_lm - 2*l_dot_lp - 2*lm_dot_lp).abs() )
+        lp_m_lm_norm =      tc.sqrt( (lmsquare + lpsquare - 2*lm_dot_lp).abs() )
+        dCl_nobeam = dCl * 4 * lm * lp
+        dCl_beam = dCl_nobeam * self.Beam_HI(l) * self.Beam_kSZ(l_m_lp_p_lm_norm) * self.Beam_kSZ(lp_m_lm_norm) 
+
+        dCl_res_beam = tc.trapz(tc.trapz(dCl_beam, tp_list, dim=-1), lp_list, dim=-1)
+
+        return dCl_res_beam
+
+    def dCl_lp_Term6_2d(self, zi, l, pz, lp, tp, l_min = 1, l_max = 500, N_l = 2000, theta_min = 0., theta_max = 2*tc.pi, N_theta = 300):
+        '''
+            Integrand for Term 6, 8, 13, 14, with parameter redefine ``lp = (l2 + l1) / 2``, and ``Lm = (l - l1 + l2) / 2 = l/2 + lm``, or inversely ``l2 = lp + lm = lp + Lm - l/2``, and ``l1 = lp - lm = lp - Lm + l/2``
+
+            Assumming both bias for electron and for HI are equal to 1, $b_v(k)=aHf b_e / k$
+        '''
+        l = tc.tensor([l])
+        pz = tc.tensor([pz])
+        lp = tc.tensor([lp])
+        tp = tc.tensor([tp])
+
+        # Make the mesh grid for theta_1, |l_2|, and theta_2
+        Tm_list = tc.linspace(theta_min, theta_max, N_theta + 1)
+        Lm_list = tc.hstack([(10**tc.arange(-4, np.log10(l_min), 0.1))[:-1], tc.linspace(l_min, l_max, N_l)])
+
+        Lm, Tm = tc.meshgrid(Lm_list, Tm_list, indexing='ij')
+
+        # Pre-define useful varibales and constants
+        chisquare = self.chi_of_z[zi]**2
+        lsquare = l**2
+        lpsquare = lp**2
+        Lmsquare = Lm**2
+        pzsquare = pz**2
+
+        l_dot_lp = Polar_dot(l, 0., lp, tp)
+        l_dot_Lm = Polar_dot(l, 0., Lm, Tm)
+        lp_dot_Lm = Polar_dot(lp, tp, Lm, Tm)
+
+        # Pre-Evaluate the k modes
+        k_l_p_lm_p_lp_norm= tc.sqrt( (lsquare/4 + Lmsquare + lpsquare + l_dot_Lm + l_dot_lp + 2*lp_dot_Lm) / chisquare + pzsquare )
+        k_lm_p_lp_norm =    tc.sqrt( (lsquare/4 + Lmsquare + lpsquare - l_dot_Lm - l_dot_lp + 2*lp_dot_Lm) / chisquare + pzsquare )
+        k_2Lm = tc.sqrt( 4 * Lmsquare / chisquare + pzsquare )
+        # Delete redundant variables to save memory
+        # del(l_dot_lp, l_dot_Lm, lp_dot_Lm)
+
+        # Pre-calculate the matter power spectrum
+        P_l_p_lm_p_lp_norm = self.Power_matter_1d(k_l_p_lm_p_lp_norm, zi)
+        P_lm_p_lp_norm = self.Power_matter_1d(k_lm_p_lp_norm, zi)
+        P_2Lm = self.Power_matter_1d(k_2Lm, zi)
+
+        ##################################################
+        # Evaluate the integrand
+        # Power sepctrum contribution
+        dCl = P_l_p_lm_p_lp_norm * P_lm_p_lp_norm  * P_2Lm
+        # Geometric factor
+        Geo  = 1 / (k_l_p_lm_p_lp_norm * k_lm_p_lp_norm)**2 # Term 6
+        Geo -= 1 / (k_lm_p_lp_norm     * k_2Lm)**2          # Term 8
+        Geo -= 1 / (k_l_p_lm_p_lp_norm * k_2Lm)**2          # Term 13
+        Geo += 1 / k_2Lm**4                                 # Term 14
+        Geo *= pzsquare * self.bv_of_z[zi]**2
+        
+        dCl = dCl * Geo
+
+        ##################################################
+        # The beam functions and the metric determinant contribution
+        l_m_lp_p_lm_norm =  tc.sqrt( (lsquare/4 + Lmsquare + lpsquare + l_dot_Lm - l_dot_lp - 2*lp_dot_Lm).abs() )
+        lp_m_lm_norm =      tc.sqrt( (lsquare/4 + Lmsquare + lpsquare - l_dot_Lm + l_dot_lp - 2*lp_dot_Lm).abs() )
+        dCl_nobeam = dCl * 4 * Lm * lp
+        dCl_beam = dCl_nobeam * self.Beam_HI(l) * self.Beam_kSZ(l_m_lp_p_lm_norm) * self.Beam_kSZ(lp_m_lm_norm) 
+
+        dCl_res_beam = tc.trapz(tc.trapz(dCl_beam, Tm_list, dim=-1), Lm_list, dim=-1)
+
+        return dCl_res_beam
+
 
     def dCl_lm_Term5_test(self, zi, l, lm, pz=1e-8, l_min = 1, l_max = 500, N_l = 2000, theta_min = 0., theta_max = 2*tc.pi, N_theta = 240, dim=2, theta = tc.pi / 3., debug=True, beam=True, resprint=True):
         '''
@@ -485,7 +619,7 @@ class Cl_kSZ2():
         backgrounds = camb.get_background(params)
 
         # Calculate the background evolution and results
-        kh, z, Pm = results.get_matter_power_spectrum(minkh=1e-4, maxkh=10, npoints = 500, var1='delta_tot', var2='delta_tot')
+        kh, z, Pm = results.get_matter_power_spectrum(minkh=1e-4, maxkh=100, npoints = 350, var1='delta_tot', var2='delta_tot')
         Xe_of_z = np.array(backgrounds.get_background_redshift_evolution(z_array, ['x_e'], format='array')).flatten()
         f_of_z = np.array(backgrounds.get_redshift_evolution([0.01], z, ['growth'])).flatten()
         chi_of_z = np.array(results.comoving_radial_distance(z_array))
@@ -504,17 +638,17 @@ class Cl_kSZ2():
 
         # Functions of redshift
         self.H_of_z = tc.tensor(
-            backgrounds.hubble_parameter(z)) / (sc.c/1000.)             # Hubble parameter over c, in unit Mpc
+            backgrounds.hubble_parameter(z)) / (sc.c/1000.)             # Hubble parameter over c, in unit 1/Mpc
         self.f_of_z = tc.tensor(f_of_z)                                 # Logarithmic growth rate
         self.Xe_of_z = tc.tensor(Xe_of_z)                               # Ionized franction Xe
         self.chi_of_z = tc.tensor(chi_of_z)                             # Comoving distance chi, in unit Mpc
         self.dchi_by_dz = 1. / self.H_of_z                              # Comoving distance growth rate dchi/dz
 
-        self.dtau_dz = NE * self.Xe_of_z * (1 + self.z_array**2) / self.H_of_z  # dtau / dz
-        self.tau_of_z = tc.hstack([ tc.tensor([0.]), 
-            tc.cumulative_trapezoid(self.dtau_dz, self.z_array, dim=-1)])       # tau, optical depth
-        self.F_of_kSZ = self.dtau_dz * tc.exp(-self.tau_of_z)           # F_of_kSZ = dtau/dz * exp(-tau)
-        self.bv_of_z = 1/(1+self.z_array) * self.H_of_z * self.f_of_z   # aHf, z-dependence part of velocity bias
+        self.dtau_dchi = NE * self.Xe_of_z * (1 + self.z_array)**2      # dtau / dchi
+        self.tau_of_z = tc.hstack([ tc.tensor([0.]),                    # tau, optical depth
+            tc.cumulative_trapezoid(self.dtau_dchi * self.dchi_by_dz, self.z_array, dim=-1)])       
+        self.g_of_kSZ = self.dtau_dchi * tc.exp(-self.tau_of_z)         # g_of_kSZ = dtau/dchi * exp(-tau)
+        self.bv_of_z = 1/(1+self.z_array) * self.H_of_z * self.f_of_z   # aHf, z-dependence part of velocity bias, in unit 1/Mpc
 
         # Save the cosmological model, for checking the result
         self.results = results
@@ -527,30 +661,33 @@ class Cl_kSZ2():
 
         # Arrays used for matter power spectrum interpolation
         # adding infrared asymptotic behavior (P proportional to k)
-        self.kh_array_itp, self.Pm_itp = self.Infrared_cutoff()
+        self.kh_array_itp, self.Pm_itp = self.cutoff()
+        self.v_rms = self.compute_v_rms()
 
-    # def tau
+    def compute_v_rms(self):
+        Pvv_k2 = self.bv_of_z[:,None]**2 * self.Pm_itp / (2*tc.pi**2)
+        return tc.trapz(Pvv_k2, self.kh_array_itp, dim=-1)
 
-    def Infrared_cutoff(self, N_add = 5, cut_off = tc.tensor([1.e-8])):
+    def cutoff(self, N_add = 25, ir_cut = 1.e-8, uv_cut = 1.e4):
         kh = self.kh_list
         z = self.z_list
         Pm = self.Pm
 
-        k_array_extra = tc.linspace(0., kh[0], N_add)
-        k_array_infrared = deepcopy(k_array_extra)
-        k_array_infrared[0] = cut_off
-        Pm_infared = k_array_infrared.repeat(len(z)).reshape([len(z), N_add]) * Pm[:, :1] / kh[0]
+        k_ir = tc.tensor(np.geomspace(ir_cut, kh[0], N_add))
+        Pm_ir = Pm[:, :1] * k_ir.repeat(len(z)).reshape([len(z), N_add]) / kh[0]
 
-        k_tot = tc.hstack([k_array_extra, tc.tensor(kh[1:])])
-        Pm_tot = tc.hstack([Pm_infared, Pm[:, 1:]])
+        k_uv = tc.tensor(np.geomspace(kh[-1], uv_cut, N_add))
+        Pm_uv = Pm[:, -1:] * (k_uv.repeat(len(z)).reshape([len(z), N_add]) / kh[-1])**(-3)
+
+        k_tot = tc.hstack([k_ir, tc.tensor(kh[1:-1]), k_uv])
+        Pm_tot = tc.hstack([Pm_ir, Pm[:, 1:-1], Pm_uv])
 
         return k_tot, Pm_tot
-    
-    def Power_matter_2d(self, z, kh):
-        return torch_interp2d(self.z_array, self.kh_array_itp, self.Pm_itp, z, kh)
 
-    def Power_matter_1d(self, kh, zindex):
-        return torch_interp1d(self.kh_array_itp, (self.Pm_itp)[zindex], kh)
+    def Power_matter_1d(self, kh, zindex, ir_cut = 1.e-8, uv_cut = 1.e4):
+        itp = torch_interp1d(self.kh_array_itp, (self.Pm_itp)[zindex], kh)
+        power = tc.where(tc.logical_and(kh>ir_cut, kh<uv_cut), itp, 0.)
+        return power
 
     def Beam_kSZ(self, l, zindex=0, use_mean = False):
         if use_mean:
@@ -558,62 +695,100 @@ class Cl_kSZ2():
         else:
             return tc.exp(-l**2 * self.SIGMA_KSZ2 / 2)
 
-    def dCl_kSZ(self, zi, l, l_min = 1, l_max = 1000, N_l = 2000, N_mu = 200, beam=True):
-        ##################################################
-        # Redefine the inputs as tc.tensors and make the meshgrid
-        chi = self.chi_of_z
-        k = tc.tensor([l]) / chi
-        kk_list = tc.hstack([tc.linspace(1e-4, l_min, 11)[:-1], tc.linspace(l_min, l_max, N_l)]) / chi
-        mu_list = tc.linspace(-1, 1, N_mu)
-
-        kk, mu = tc.meshgrid(kk_list, mu_list, indexing='ij')
-        k_m_kk_norm_square = k**2 + kk**2 - 2*k*kk*mu
-
-        ##################################################
-        # Evaluation
-        dCl  = self.Power_matter_1d(kk, zi) * self.Power_matter_1d(tc.sqrt(k_m_kk_norm_square), zi)
-        dCl *= tc.pi * k * (k - 2*kk*mu) * (1 - mu**2) / k_m_kk_norm_square
-
-        z_dependence = 1/(1+self.z_array[zi]) * self.H_of_z[zi] * self.f_of_z[zi]
-        dCl *= z_dependence
-
-        ##################################################
-        # Integral
-        if beam=='both':
-            dCl_beam = dCl * self.Beam_kSZ(l,zi)**2
-
-            dCl_res_nobeam = tc.trapz(tc.trapz(dCl, mu_list, dim=-1), kk_list, dim=-1)
-            dCl_res_beam = tc.trapz(tc.trapz(dCl_beam, mu_list, dim=-1), kk_list, dim=-1)
-            return dCl_res_nobeam, dCl_res_beam
-
-        elif beam:
-            dCl_beam = dCl * self.Beam_kSZ(l,zi)**2
-            return tc.trapz(tc.trapz(dCl_beam, mu_list, dim=-1), kk_list, dim=-1)
-            
-        else:
-            return tc.trapz(tc.trapz(dCl, mu_list, dim=-1), kk_list, dim=-1)
-
-    def dCl_kSZ2(self):
-        return 0
-    
-    def dCl_kSZ_test(self, zi, l, l_min = 1, l_max = 1000, N_l = 2000, N_mu = 200, beam=True):
+    def dCl_kSZ(self, zi, l, l_min = 190, l_max = None, N_l = 1100, N_mu = 200, beam=True):
+        '''
+            We denote k' as kk, theta_kk as the angle
+            k = l / chi, theta_k = 0
+            vector p = k - kk
+        '''
         ##################################################
         # Redefine the inputs as tc.tensors and make the meshgrid
         chi = self.chi_of_z[zi]
         k = tc.tensor([l]) / chi
-        kk_list = tc.hstack([tc.linspace(1e-4, l_min, 11)[:-1], tc.linspace(l_min, l_max, N_l)]) / chi
+
+        if k > 100.:
+            dCl = self.Power_matter_1d(k, zi) * self.v_rms[zi] / 3.
+            dCl_beam = dCl * self.Beam_kSZ(l,zi)**2
+            if beam=='both':    return dCl, dCl_beam
+            elif beam:          return dCl_beam                
+            else:               return dCl
+        
+        else:
+            if l_max == None: l_max = 2 * np.max([200., l])
+            kk_list = tc.hstack([tc.linspace(1e-4, 1, 11)[:-1], 
+                                tc.linspace(1, l_min, 391)[:-1],
+                                tc.linspace(l_min, l_max, N_l)]) / chi
+            mu_list = tc.linspace(-1, 1, N_mu)
+
+            kk, mu = tc.meshgrid(kk_list, mu_list, indexing='ij')
+            theta_kk = tc.arccos(mu)
+            k_m_kk_norm_square = k**2 + kk**2 - 2*k*kk*mu
+
+            ##################################################
+            # Evaluation
+            dCl  = self.Power_matter_1d(kk, zi) * self.Power_matter_1d(tc.sqrt(k_m_kk_norm_square), zi)
+            theta_p = Evaluate_angle(2, k, tc.tensor([0.]), -kk, theta_kk)
+            sin_alpha = tc.sin(theta_p - theta_kk)
+            # dCl *= k * (k - 2*kk*mu) * (1 - mu**2) / k_m_kk_norm_square
+            dCl *= (k - 2*kk*mu) * sin_alpha**2 / k 
+
+            dCl *= self.bv_of_z[zi]**2 / 2 / (2*tc.pi)**2
+
+            ##################################################
+            # Integral
+            if beam=='both':
+                dCl_beam = dCl * self.Beam_kSZ(l,zi)**2
+
+                dCl_res_nobeam = tc.trapz(tc.trapz(dCl, mu_list, dim=-1), kk_list, dim=-1)
+                dCl_res_beam = tc.trapz(tc.trapz(dCl_beam, mu_list, dim=-1), kk_list, dim=-1)
+                return dCl_res_nobeam, dCl_res_beam
+
+            elif beam:
+                dCl_beam = dCl * self.Beam_kSZ(l,zi)**2
+                return tc.trapz(tc.trapz(dCl_beam, mu_list, dim=-1), kk_list, dim=-1)
+                
+            else:
+                return tc.trapz(tc.trapz(dCl, mu_list, dim=-1), kk_list, dim=-1)
+
+    def Cl_kSZ(self, l, dCl_data = None, beam = True):
+        if dCl_data == None:
+            dCl_data = tc.empty_like(self.z_array)
+            for zi in range(len(self.z_array)):
+                dCl_data[zi] = self.dCl_kSZ(zi, l, beam = beam)
+        
+        dCl_dchi = dCl_data * (self.g_of_kSZ / self.chi_of_z)**2
+        Cl = tc.trapz(dCl_dchi, self.chi_of_z, dim=-1)
+        return Cl
+
+    def Cl_kSZ2(self, l, Cl):
+        return 0
+    
+    def dCl_kSZ_test(self, zi, l, l_min = 190, l_max = None, N_l = 1100, N_mu = 200, beam=True, resprint=True):
+        ##################################################
+        # Redefine the inputs as tc.tensors and make the meshgrid
+        chi = self.chi_of_z[zi]
+        k = tc.tensor([l]) / chi
+
+        if l_max == None: l_max = 2 * np.max([200., l])
+
+        kk_list = tc.hstack([tc.linspace(1e-4, 1, 11)[:-1], 
+                             tc.linspace(1, l_min, 391)[:-1],
+                             tc.linspace(l_min, l_max, N_l)]) / chi
         mu_list = tc.linspace(-1, 1, N_mu)
 
         kk, mu = tc.meshgrid(kk_list, mu_list, indexing='ij')
+        theta_kk = tc.arccos(mu)
         k_m_kk_norm_square = k**2 + kk**2 - 2*k*kk*mu
 
         ##################################################
         # Evaluation
         dCl  = self.Power_matter_1d(kk, zi) * self.Power_matter_1d(tc.sqrt(k_m_kk_norm_square), zi)
-        dCl *= tc.pi * k * (k - 2*kk*mu) * (1 - mu**2) / k_m_kk_norm_square
+        theta_p = Evaluate_angle(2, k, tc.tensor([0.]), -kk, theta_kk)
+        sin_alpha = tc.sin(theta_p - theta_kk)
+        # dCl *= k * (k - 2*kk*mu) * (1 - mu**2) / k_m_kk_norm_square
+        dCl *= (k - 2*kk*mu) * sin_alpha**2 / k
 
-        z_dependence = 1/(1+self.z_array[zi]) * self.H_of_z[zi] * self.f_of_z[zi]
-        dCl *= z_dependence
+        dCl *= self.bv_of_z[zi]**2 / 2 / (2*tc.pi)**2
 
         ##################################################
         # Integral
@@ -622,16 +797,27 @@ class Cl_kSZ2():
 
             dCl_res_nobeam = tc.trapz(tc.trapz(dCl, mu_list, dim=-1), kk_list, dim=-1)
             dCl_res_beam = tc.trapz(tc.trapz(dCl_beam, mu_list, dim=-1), kk_list, dim=-1)
-            return dCl_res_nobeam, dCl_res_beam
+            if resprint: print(dCl_res_nobeam, dCl_res_beam)
+            return dCl_res_nobeam, dCl_res_beam, dCl, dCl_beam, kk, mu
 
         elif beam:
-            dCl_beam = dCl * self.Beam_kSZ(l,zi)**2
-            return tc.trapz(tc.trapz(dCl_beam, mu_list, dim=-1), kk_list, dim=-1)
+            dCl = dCl * self.Beam_kSZ(l,zi)**2
+        res = tc.trapz(tc.trapz(dCl, mu_list, dim=-1), kk_list, dim=-1)
+        if resprint: print(res)
+        return tc.trapz(tc.trapz(dCl, mu_list, dim=-1), kk_list, dim=-1), dCl, kk, mu
+
+    def Cl_kSZ_test(self, l, dCl_data = None, beam = True):
+        if beam=='both':
+            if dCl_data == None:
+                dCl_data = tc.empty([2, len(self.z_array)])
+                for zi in range(len(self.z_array)):
+                    dCl_data[0,zi], dCl_data[1,zi] = self.dCl_kSZ(zi, l, beam = beam)
             
+            dCl_dchi = dCl_data * (self.g_of_kSZ / self.chi_of_z)**2 # * self.dchi_by_dz
+            Cl = tc.trapz(dCl_dchi, self.chi_of_z, dim=-1)
+            return Cl[0], Cl[1]
         else:
-            return tc.trapz(tc.trapz(dCl, mu_list, dim=-1), kk_list, dim=-1)
-
-
+            return self.Cl_kSZ(l, dCl_data=dCl_data, beam=beam)
 
 
 def Polar_dot(lx, thetax, ly, thetay):
