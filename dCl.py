@@ -47,15 +47,19 @@ class Cl_kSZ2_HI2():
         self.Pm = tc.tensor(Pm)     # Matter power spectrum
 
         # Functions of redshift
-        self.H_of_z = tc.tensor(
-            backgrounds.hubble_parameter(z)) / (sc.c/1000.)                 # Hubble parameter over c, in unit Mpc
+        self.H_of_z = tc.tensor(                                            # Hubble parameter over c, in unit Mpc
+            backgrounds.hubble_parameter(z)) / (sc.c/1000.)                 
         self.f_of_z = tc.tensor(f_of_z)                                     # Logarithmic growth rate
         self.Xe_of_z = tc.tensor(Xe_of_z)                                   # Ionized franction Xe
         self.chi_of_z = tc.tensor(chi_of_z)                                 # Comoving distance chi, in unit Mpc
         self.dchi_by_dz = 1. / self.H_of_z                                  # Comoving distance growth rate dchi/dz
-        self.visibility_of_z = self.Xe_of_z * (1+self.z_array)**2           # Visibility function g(z) of kSZ effect
-        self.W_HI = 1 / (z[-1] - z[0])                                      # Window function of HI observation
+
+        self.dtau_dchi = NE * self.Xe_of_z * (1 + self.z_array)**2          # dtau / dchi
+        self.tau_of_z = self.evaluate_tau(H0, ombh2)                        # tau, optical depth     
+        self.visibility_of_z = self.dtau_dchi * tc.exp(-self.tau_of_z)      # Visibility function g(z) of kSZ effect, g = dtau/dchi * exp(-tau)
         self.F_kSZ = self.visibility_of_z / self.chi_of_z**2                # F_kSZ, propto visibility function of kSZ
+        
+        self.W_HI = 1. / self.dchi_by_dz / (z[-1] - z[0])                   # Window function of HI observation
         self.G_HI = self.W_HI / self.chi_of_z**2                            # G_HI, proptp window function of HI
         self.bv_of_z = 1/(1+self.z_array) * self.H_of_z * self.f_of_z       # aHf, z-dependence part of velocity bias
 
@@ -75,6 +79,11 @@ class Cl_kSZ2_HI2():
         # adding infrared asymptotic behavior (P proportional to k)
         self.kh_array_itp, self.Pm_itp = self.cutoff()
 
+    def evaluate_tau(self, H0, ombh2):
+        obj = Cl_kSZ2(zmax=self.z_array[-1], Nz=40, H0=H0, ombh2=ombh2)
+        tau = torch_interp1d(obj.z_array, obj.tau_of_z, self.z_array)
+        return tau
+
     def cutoff(self, N_add = 25, ir_cut = 1.e-8, uv_cut = 1.e4):
         kh = self.kh_list
         z = self.z_list
@@ -92,7 +101,7 @@ class Cl_kSZ2_HI2():
         return k_tot, Pm_tot
 
     def Power_matter_1d(self, kh, zindex, ir_cut = 1.e-8, uv_cut = 1.e4):
-        itp = torch_interp1d(self.kh_array_itp, (self.Pm_itp)[zindex], kh)
+        itp = 10.**torch_interp1d(tc.log10(self.kh_array_itp), tc.log10((self.Pm_itp)[zindex]), tc.log10(kh))
         power = tc.where(tc.logical_and(kh>ir_cut, kh<uv_cut), itp, 0.)
         return power
 
@@ -120,10 +129,10 @@ class Cl_kSZ2_HI2():
         # cut off the divergence at infrared
         # return tc.where(kh > cut_off, z_dependence / kh, z_dependence / cut_off)
        
-    def integral_over_z(self, dCl_tot): # TO BE REVISED
+    def integral_over_chi(self, dCl_tot): # TO BE REVISED
         # The window functions
-        dCl_tot *= self.F_kSZ**2 * self.G_HI**2 * self.dchi_by_dz
-        dCl_res = tc.trapz(dCl_tot, self.z_array, dim=-1)
+        dCl_tot *= self.F_kSZ**2 * self.G_HI
+        dCl_res = tc.trapz(dCl_tot, self.chi_of_z, dim=-1)
         return dCl_res
 
 
@@ -393,6 +402,7 @@ class Cl_kSZ2_HI2():
         return dCl_res_beam
 
 
+
     def dCl_lm_Term5_test(self, zi, l, lm, pz=1e-8, l_min = 1, l_max = 500, N_l = 2000, theta_min = 0., theta_max = 2*tc.pi, N_theta = 240, dim=2, theta = tc.pi / 3., debug=True, beam=True, resprint=True):
         '''
             Integrand for Term 5, 9, 10, 11, with parameter redefine ``lp = (l2 + l1) / 2``, and ``lm = (l2 - l1) / 2``, or inversely ``l2 = lp + lm``, and ``l1 = lp - lm``
@@ -607,14 +617,14 @@ class Cl_kSZ2_HI2():
 
 class Cl_kSZ2():
 
-    def __init__(self, zmax = 10, zmin = 1e-4, Nz = 100, Tb = 1.8e-4, H0 = 67.75, ombh2 = 0.022):
+    def __init__(self, zmax = 10, zmin = 1e-3, Nz = 100, H0 = 67.75, ombh2 = 0.022, nonlinear = True):
         ##################################################s
         # Define the cosmological parameters
 
         z_array = tc.tensor(np.hstack([np.geomspace(zmin, 0.1, 10)[:-1], np.linspace(0.1, zmax, Nz, endpoint=True)]))
         params = camb.CAMBparams()
         params.set_cosmology(H0=H0, ombh2=ombh2)
-        params.set_matter_power(redshifts = z_array, kmax=10, nonlinear=True)
+        params.set_matter_power(redshifts = z_array, kmax=10, nonlinear=nonlinear)
         results = camb.get_results(params)
         backgrounds = camb.get_background(params)
 
@@ -629,7 +639,6 @@ class Cl_kSZ2():
 
         # Constant scalars and arrays
         self.TCMB = params.TCMB     # CMB temperature 2.7K
-        self.Tb = Tb                # HI brightness temperature, in unite mK
         self.kh_list = kh           # Total kh array that we are interested in
         self.kh_array = tc.tensor(kh)
         self.z_list = z             # Total redshift array that we are interested in
@@ -685,7 +694,7 @@ class Cl_kSZ2():
         return k_tot, Pm_tot
 
     def Power_matter_1d(self, kh, zindex, ir_cut = 1.e-8, uv_cut = 1.e4):
-        itp = torch_interp1d(self.kh_array_itp, (self.Pm_itp)[zindex], kh)
+        itp = 10.**torch_interp1d(tc.log10(self.kh_array_itp), tc.log10((self.Pm_itp)[zindex]), tc.log10(kh))
         power = tc.where(tc.logical_and(kh>ir_cut, kh<uv_cut), itp, 0.)
         return power
 
@@ -760,9 +769,38 @@ class Cl_kSZ2():
         Cl = tc.trapz(dCl_dchi, self.chi_of_z, dim=-1)
         return Cl
 
-    def Cl_kSZ2(self, l, Cl):
-        return 0
+    def Cl_kSZ2(self, l_list = tc.tensor(np.geomspace(10, 1e5, 101)), Cl_kSZ = None, ll_min = 10., ll_max = 1.e5, N_ll = 501, beam=True):
+        if Cl_kSZ is None:
+            Cl_kSZ = tc.empty_like(l_list)
+            for i in range(len(l_list)):
+                Cl_kSZ[i] = self.Cl_kSZ_test(l_list[i], beam = beam)
+
+        lg_l_list = tc.log10(l_list)
+        # lg_Cl_kSZ = tc.log10(Cl_kSZ)
+
+        ll_list = tc.tensor(np.geomspace(ll_min, ll_max, N_ll))
+        theta_list = tc.linspace(0, tc.pi, 100)
+        l, ll, theta = tc.meshgrid(l_list, ll_list, theta_list)
+
+        l_m_ll_norm = tc.sqrt(l**2 + ll**2 - 2*l*ll*tc.cos(theta))
+
+        C1 = tc.empty_like(l)
+        C2 = tc.empty_like(l)
+
+
+        C1 = tc.where(tc.logical_and(l>=tc.tensor(ll_min), l<=tc.tensor(ll_max)),
+                      torch_interp1d(lg_l_list, Cl_kSZ, tc.log10(l)), 
+                      tc.tensor(0.))
+        C2 = tc.where(tc.logical_and(l_m_ll_norm>=tc.tensor(ll_min), l_m_ll_norm<=tc.tensor(ll_max)), 
+                      torch_interp1d(lg_l_list, Cl_kSZ, tc.log10(l_m_ll_norm)), 
+                      tc.tensor(0.))
+
+        CL = 2 * tc.trapz(tc.trapz(C1*C2*ll, theta_list, dim=-1), ll_list, dim=-1)
+
+        return CL
     
+
+
     def dCl_kSZ_test(self, zi, l, l_min = 190, l_max = None, N_l = 1100, N_mu = 200, beam=True, resprint=True):
         ##################################################
         # Redefine the inputs as tc.tensors and make the meshgrid
