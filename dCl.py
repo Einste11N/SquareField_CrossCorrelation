@@ -18,7 +18,7 @@ NE = 5.13e-7  # in unit 1/Mpc
 
 class Cl_kSZ2_HI2():
 
-    def __init__(self, z_array, Tb = 1.8e-4, H0 = 67.75, ombh2 = 0.022):
+    def __init__(self, z_array, Tb = 1.8e-4, OmHIh = 2.45e-4, H0 = 67.75, ombh2 = 0.022):
         
         ##################################################s
         # Define the cosmological parameters
@@ -39,7 +39,6 @@ class Cl_kSZ2_HI2():
 
         # Constant scalars and arrays
         self.TCMB = params.TCMB     # CMB temperature 2.7K
-        self.Tb = Tb                # HI brightness temperature, in unite mK
         self.kh_list = kh           # Total kh array that we are interested in
         self.kh_array = tc.tensor(kh)
         self.z_list = z             # Total redshift array that we are interested in
@@ -53,15 +52,19 @@ class Cl_kSZ2_HI2():
         self.Xe_of_z = tc.tensor(Xe_of_z)                                   # Ionized franction Xe
         self.chi_of_z = tc.tensor(chi_of_z)                                 # Comoving distance chi, in unit Mpc
         self.dchi_by_dz = 1. / self.H_of_z                                  # Comoving distance growth rate dchi/dz
+        self.bv_of_z = 1/(1+self.z_array) * self.H_of_z * self.f_of_z       # aHf, z-dependence part of velocity bias
 
+        # Redshift dependence of kSZ
         self.dtau_dchi = NE * self.Xe_of_z * (1 + self.z_array)**2          # dtau / dchi
         self.tau_of_z = self.evaluate_tau(H0, ombh2)                        # tau, optical depth     
         self.visibility_of_z = self.dtau_dchi * tc.exp(-self.tau_of_z)      # Visibility function g(z) of kSZ effect, g = dtau/dchi * exp(-tau)
         self.F_kSZ = self.visibility_of_z / self.chi_of_z**2                # F_kSZ, propto visibility function of kSZ
         
-        self.W_HI = 1. / self.dchi_by_dz / (z[-1] - z[0])                   # Window function of HI observation
+        # Redshift dependence of HI
+        self.Tb_of_z = Tb * OmHIh * (1+self.z_array)**2 * H0 / self.H_of_z  # HI brightness temperature, in unite mK
+        self.W_HI = self.Tb_of_z**2 / self.dchi_by_dz / (z[-1] - z[0])      # Window function of HI observation
         self.G_HI = self.W_HI / self.chi_of_z**2                            # G_HI, proptp window function of HI
-        self.bv_of_z = 1/(1+self.z_array) * self.H_of_z * self.f_of_z       # aHf, z-dependence part of velocity bias
+        self.G_HI_auto = (self.W_HI / self.chi_of_z)**2                     # G_HI_auto for HI square field auto correlation
 
         # Save the cosmological model, for checking the result
         self.results = results
@@ -129,12 +132,6 @@ class Cl_kSZ2_HI2():
         # cut off the divergence at infrared
         # return tc.where(kh > cut_off, z_dependence / kh, z_dependence / cut_off)
        
-    def integral_over_chi(self, dCl_tot): # TO BE REVISED
-        # The window functions
-        dCl_tot *= self.F_kSZ**2 * self.G_HI
-        dCl_res = tc.trapz(dCl_tot, self.chi_of_z, dim=-1)
-        return dCl_res
-
 
     def dCl_lm_Term5(self, zi, l, lm, pz=1e-8, l_min = 1, l_max = 500, N_l = 2000, theta_min = 0., theta_max = 2*tc.pi, N_theta = 300):
         '''
@@ -272,7 +269,6 @@ class Cl_kSZ2_HI2():
 
         return dCl_res_beam #, dCl_res_nobeam
 
-
     def dCl_lm_Term5_2d(self, zi, l, pz, lm, tm, l_min = 1, l_max = 500, N_l = 2000, theta_min = 0., theta_max = 2*tc.pi, N_theta = 300):
         '''
             Integrand for Term 5, 9, 10, 11, with parameter redefine ``lp = (l2 + l1) / 2``, and ``lm = (l2 - l1) / 2``, or inversely ``l2 = lp + lm``, and ``l1 = lp - lm``
@@ -401,6 +397,47 @@ class Cl_kSZ2_HI2():
 
         return dCl_res_beam
 
+    def dCl_HI2(self, zi, l, l_min = 190, l_mid = None, l_max = None, N_l = 500, N_mu = 120, beam=True):
+        '''
+            We denote k' as kk, theta_kk as the angle
+            k = l / chi, theta_k = 0
+            vector p = k - kk
+        '''
+        ##################################################
+        # Redefine the inputs as tc.tensors and make the meshgrid
+        chi = self.chi_of_z[zi]
+        k = tc.tensor([l]) / chi
+        if l_mid is None : l_mid = 2 * np.max([300., l])
+        if l_max is None : l_max = 100. * chi
+
+        kk_list = tc.hstack([tc.linspace(1e-4, 1, 11)[:-1], 
+                            tc.linspace(1, l_min, 191)[:-1],
+                            tc.linspace(l_min, l_mid, N_l)[:-1],
+                            10**tc.linspace(np.log10(l_mid), np.log10(l_max), 50)]) / chi
+        mu_list = tc.linspace(-1, 1, N_mu)
+
+        kk, mu = tc.meshgrid(kk_list, mu_list, indexing='ij')
+        k_m_kk_norm = k**2 + kk**2 - 2*k*kk*mu
+
+        ##################################################
+        # Evaluation
+        dCl = kk**2 * self.Power_matter_1d(kk, zi) * self.Power_matter_1d(k_m_kk_norm, zi) / (2*tc.pi)**2
+
+        ##################################################
+        # Integral
+        if beam=='both':
+            dCl_beam = dCl * self.Beam_HI(l,zi)**2
+
+            dCl_res_nobeam = tc.trapz(tc.trapz(dCl, mu_list, dim=-1), kk_list, dim=-1)
+            dCl_res_beam = tc.trapz(tc.trapz(dCl_beam, mu_list, dim=-1), kk_list, dim=-1)
+            return dCl_res_nobeam, dCl_res_beam
+
+        elif beam:
+            dCl_beam = dCl * self.Beam_HI(l,zi)**2
+            return tc.trapz(tc.trapz(dCl_beam, mu_list, dim=-1), kk_list, dim=-1)
+            
+        else:
+            return tc.trapz(tc.trapz(dCl, mu_list, dim=-1), kk_list, dim=-1)
 
 
     def dCl_lm_Term5_test(self, zi, l, lm, pz=1e-8, l_min = 1, l_max = 500, N_l = 2000, theta_min = 0., theta_max = 2*tc.pi, N_theta = 240, dim=2, theta = tc.pi / 3., debug=True, beam=True, resprint=True):
@@ -610,8 +647,52 @@ class Cl_kSZ2_HI2():
         else:
             return dCl_res
 
-    def dCl_HI(self):
-        return 0
+
+    def dCl_HI2_test(self, zi, l, l_min = 190, l_mid = None, l_max = None, N_l = 500, N_mu = 120, debug=True, beam=True, resprint=True):
+        '''
+            We denote k' as kk, theta_kk as the angle
+            k = l / chi, theta_k = 0
+            vector p = k - kk
+        '''
+        ##################################################
+        # Redefine the inputs as tc.tensors and make the meshgrid
+        chi = self.chi_of_z[zi]
+        k = tc.tensor([l]) / chi
+        if l_mid is None : l_mid = 2 * np.max([300., l])
+        if l_max is None : l_max = 100. * chi
+
+        kk_list = tc.hstack([tc.linspace(1e-4, 1, 11)[:-1], 
+                            tc.linspace(1, l_min, 191)[:-1],
+                            tc.linspace(l_min, l_mid, N_l)[:-1],
+                            10**tc.linspace(np.log10(l_mid), np.log10(l_max), 50)]) / chi
+        mu_list = tc.linspace(-1, 1, N_mu)
+
+        kk, mu = tc.meshgrid(kk_list, mu_list, indexing='ij')
+        k_m_kk_norm = k**2 + kk**2 - 2*k*kk*mu
+
+        ##################################################
+        # Evaluation
+        dCl = kk**2 * self.Power_matter_1d(kk, zi) * self.Power_matter_1d(k_m_kk_norm, zi) / (2*tc.pi)**2
+
+        ##################################################
+        # Integral
+        if beam=='both':
+            dCl_beam = dCl * self.Beam_HI(l,zi)**2
+
+            dCl_res_nobeam = tc.trapz(tc.trapz(dCl, mu_list, dim=-1), kk_list, dim=-1)
+            dCl_res_beam = tc.trapz(tc.trapz(dCl_beam, mu_list, dim=-1), kk_list, dim=-1)
+
+            if resprint: print(dCl_res_nobeam, dCl_res_beam)
+            if debug: return dCl_res_nobeam, dCl_res_beam, dCl, dCl_beam, kk, mu
+            else: return dCl_res_nobeam, dCl_res_beam
+
+        elif beam:
+            dCl = dCl * self.Beam_HI(l,zi)**2
+        dCl_res = tc.trapz(tc.trapz(dCl, mu_list, dim=-1), kk_list, dim=-1)
+
+        if resprint: print(dCl_res)
+        if debug: return dCl_res, dCl, kk, mu
+        else: return dCl_res
 
 
 
@@ -800,7 +881,6 @@ class Cl_kSZ2():
         return CL
     
 
-
     def dCl_kSZ_test(self, zi, l, l_min = 190, l_max = None, N_l = 1100, N_mu = 200, beam=True, resprint=True):
         ##################################################
         # Redefine the inputs as tc.tensors and make the meshgrid
@@ -856,6 +936,7 @@ class Cl_kSZ2():
             return Cl[0], Cl[1]
         else:
             return self.Cl_kSZ(l, dCl_data=dCl_data, beam=beam)
+
 
 
 def Polar_dot(lx, thetax, ly, thetay):
