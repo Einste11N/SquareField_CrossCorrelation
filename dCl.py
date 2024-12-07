@@ -985,11 +985,11 @@ def Evaluate_angle(N_vec, *vectors):
     
 def torch_interp1d(x, y, x_new):
 
-    indices = tc.searchsorted(x, x_new) - 1
-    indices = tc.clamp(indices, 0, len(x) - 2)
+    xindices = tc.searchsorted(x, x_new) - 1
+    xindices = tc.clamp(xindices, 0, len(x) - 2)
 
-    x0, x1 = x[indices], x[indices + 1]
-    y0, y1 = y[indices], y[indices + 1]
+    x0, x1 = x[xindices], x[xindices + 1]
+    y0, y1 = y[xindices], y[xindices + 1]
 
     slope = (y1 - y0) / (x1 - x0)
     y_query = y0 + slope * (x_new - x0)
