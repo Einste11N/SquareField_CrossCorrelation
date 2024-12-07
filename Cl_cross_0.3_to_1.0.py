@@ -53,6 +53,7 @@ length_p = len(params)
 length100 = length_p * Nz / 100
 time0 = time.time()
 
+print('start at', time0)
 for zindex in range(1, len(zlist)):
     res_beam = []
     res_nobeam = []
