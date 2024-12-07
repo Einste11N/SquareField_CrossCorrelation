@@ -47,12 +47,15 @@ def compute(zindex, l, pz, l1, lmax, Ntheta):
 
 # N_JOBS = 4
 l1_list = generate_l1_list()
+
+zstart = 1
+zend = len(zlist)
 length_p = len(params)
-length100 = length_p * Nz / 100
+length_total = length_p * (zend - zstart)
+length100 = length_total / 100
 time0 = time.time()
 
-print('start at', time0)
-for zindex in range(1, len(zlist)):
+for zindex in range(zstart, zend):
     res_beam = []
     res_nobeam = []
     for i, p in enumerate(params):
@@ -67,13 +70,14 @@ for zindex in range(1, len(zlist)):
             res_nobeam.append(res2)
 
         time_i = time.time() - time0
-        total_index = zindex * length_p + i
-        print(total_index, 'percent: {:.3f}%'.format((total_index+1)/length100), 
+        total_index = (zindex - zstart) * length_p + i
+        print(' ', total_index, ' of ', length_total, ' percent: {:.3f}%'.format((total_index+1)/length100), 
             ', average velocity: {:.4f}% per min'.format((total_index+1)/length100 * 60. / time_i), 
             '    ', end='\r')
     
+    print(' ')
     res_beam_w = tc.tensor(res_beam).reshape([len(l_list), len(pz_list), len(l1_list)])
     res_nobeam_w = tc.tensor(res_nobeam).reshape([len(l_list), len(pz_list), len(l1_list)])
-
+    print('saving data...')
     np.save('Beam_data/z_' + zmin_text + '_' + zmax_text + f'/Cl_cross_{zindex}.npy', res_beam_w)
     np.save(f'NoBeam_data/z_' + zmin_text + '_' + zmax_text + f'/Cl_cross_{zindex}.npy', res_nobeam_w)
