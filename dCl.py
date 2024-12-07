@@ -985,16 +985,17 @@ def Evaluate_angle(N_vec, *vectors):
     
 def torch_interp1d(x, y, x_new):
 
-    xindices = tc.searchsorted(x, x_new) - 1
+    x_flat= x_new.flatten()
+    xindices = tc.searchsorted(x, x_flat) - 1
     xindices = tc.clamp(xindices, 0, len(x) - 2)
 
     x0, x1 = x[xindices], x[xindices + 1]
     y0, y1 = y[xindices], y[xindices + 1]
 
     slope = (y1 - y0) / (x1 - x0)
-    y_query = y0 + slope * (x_new - x0)
+    y_query = y0 + slope * (x_flat - x0)
     
-    return y_query
+    return y_query.reshape(x_new.shape)
 
 def torch_interp2d(x, y, z, x_new, y_new, mode='bilinear'):
     '''
