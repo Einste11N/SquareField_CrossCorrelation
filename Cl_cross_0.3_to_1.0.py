@@ -45,7 +45,9 @@ def compute(zindex, l, pz, l1, lmax, Ntheta):
     res_beam, res_nobeam = dCl_obj.dCl_lm_Term5(zindex, l, l1, pz, l_max=lmax, N_theta=Ntheta, beam='both')
     return res_beam, res_nobeam
 
-# N_JOBS = 4
+N_JOBS = 4
+do_parallel = True
+
 l1_list = generate_l1_list()
 
 zstart = 1
@@ -54,6 +56,8 @@ length_p = len(params)
 length_total = length_p * (zend - zstart)
 length100 = length_total / 100
 time0 = time.time()
+
+
 
 for zindex in range(zstart, zend):
     res_beam = []
@@ -64,10 +68,20 @@ for zindex in range(zstart, zend):
         lmax = generate_lmax(l1_list, pz*chi)
         Ntheta = generate_Ntheta(l1_list, pz*chi)
 
-        for l1_index in range(len(l1_list)):
-            res1, res2 = compute(zindex, l, pz, l1_list[l1_index], lmax[l1_index], Ntheta[l1_index])
-            res_beam.append(res1)
-            res_nobeam.append(res2)
+        
+        if do_parallel:
+            res_p = Parallel(n_jobs=N_JOBS, prefer='threads')(delayed(compute)(zindex, l, pz, l1_list[l1_index], lmax[l1_index], Ntheta[l1_index]) 
+                                                        for l1_index in range(len(l1_list)))
+            res_beam_p = [r[0] for r in res_p]
+            res_nobeam_p = [r[1] for r in res_p]
+            res_beam.append(res_beam_p)
+            res_nobeam.append(res_nobeam_p)
+
+        else:
+            for l1_index in range(len(l1_list)):
+                res1, res2 = compute(zindex, l, pz, l1_list[l1_index], lmax[l1_index], Ntheta[l1_index])
+                res_beam.append(res1)
+                res_nobeam.append(res2)
 
         time_i = time.time() - time0
         total_index = (zindex - zstart) * length_p + i
