@@ -4,7 +4,6 @@ tc.set_default_dtype(tc.float64)
 import numpy as np
 import dCl
 from joblib import Parallel, delayed
-import matplotlib.pyplot as plt
 import time
 
 Nz = 8
