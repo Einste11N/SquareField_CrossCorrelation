@@ -18,7 +18,7 @@ NE = 5.13e-7  # in unit 1/Mpc
 
 class Cl_kSZ2_HI2():
 
-    def __init__(self, z_array, Tb = 1.8e-4, OmHIh = 2.45e-4, H0 = 67.75, ombh2 = 0.022):
+    def __init__(self, z_array, Tb = 1.8e-1, OmHIh = 2.45e-4, H0 = 67.75, ombh2 = 0.022):
         
         ##################################################s
         # Define the cosmological parameters
@@ -61,7 +61,7 @@ class Cl_kSZ2_HI2():
         self.F_kSZ = self.visibility_of_z / self.chi_of_z**2                # F_kSZ, propto visibility function of kSZ
         
         # Redshift dependence of HI
-        self.Tb_of_z = Tb * OmHIh * (1+self.z_array)**2 * H0 / self.H_of_z  # HI brightness temperature, in unite mK
+        self.Tb_of_z = Tb * OmHIh * (1+self.z_array)**2 * H0 / self.H_of_z  # HI brightness temperature, in unite K
         self.W_HI = self.Tb_of_z**2 / self.dchi_by_dz / (z[-1] - z[0])      # Window function of HI observation
         self.G_HI = self.W_HI / self.chi_of_z**2                            # G_HI, proptp window function of HI
         self.G_HI_auto = (self.W_HI / self.chi_of_z)**2                     # G_HI_auto for HI square field auto correlation
@@ -131,7 +131,7 @@ class Cl_kSZ2_HI2():
         return z_dependence / kh
         # cut off the divergence at infrared
         # return tc.where(kh > cut_off, z_dependence / kh, z_dependence / cut_off)
-       
+        
 
     def dCl_lm_Term5(self, zi, l, lm, pz=1e-8, l_min = 1, l_max = 500, N_l = 2000, theta_min = 0., theta_max = 2*tc.pi, N_theta = 300, beam=True):
         '''
