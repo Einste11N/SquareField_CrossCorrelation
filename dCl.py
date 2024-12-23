@@ -821,7 +821,7 @@ class Cl_kSZ2():
 
         if k > 100.:
             dCl = self.Power_matter_1d(k, zi) * self.v_rms[zi] / 3.
-            dCl_beam = dCl * self.Beam_kSZ(l,zi)**2
+            dCl_beam = dCl * self.Beam_kSZ(l,zi)
             if beam=='both':    return dCl, dCl_beam
             elif beam:          return dCl_beam                
             else:               return dCl
@@ -850,14 +850,14 @@ class Cl_kSZ2():
             ##################################################
             # Integral
             if beam=='both':
-                dCl_beam = dCl * self.Beam_kSZ(l,zi)**2
+                dCl_beam = dCl * self.Beam_kSZ(l,zi)
 
                 dCl_res_nobeam = tc.trapz(tc.trapz(dCl, mu_list, dim=-1), kk_list, dim=-1)
                 dCl_res_beam = tc.trapz(tc.trapz(dCl_beam, mu_list, dim=-1), kk_list, dim=-1)
                 return dCl_res_nobeam, dCl_res_beam
 
             elif beam:
-                dCl_beam = dCl * self.Beam_kSZ(l,zi)**2
+                dCl_beam = dCl * self.Beam_kSZ(l,zi)
                 return tc.trapz(tc.trapz(dCl_beam, mu_list, dim=-1), kk_list, dim=-1)
                 
             else:
@@ -934,7 +934,7 @@ class Cl_kSZ2():
         ##################################################
         # Integral
         if beam=='both':
-            dCl_beam = dCl * self.Beam_kSZ(l,zi)**2
+            dCl_beam = dCl * self.Beam_kSZ(l,zi)
 
             dCl_res_nobeam = tc.trapz(tc.trapz(dCl, mu_list, dim=-1), kk_list, dim=-1)
             dCl_res_beam = tc.trapz(tc.trapz(dCl_beam, mu_list, dim=-1), kk_list, dim=-1)
@@ -942,7 +942,7 @@ class Cl_kSZ2():
             return dCl_res_nobeam, dCl_res_beam, dCl, dCl_beam, kk, mu
 
         elif beam:
-            dCl = dCl * self.Beam_kSZ(l,zi)**2
+            dCl = dCl * self.Beam_kSZ(l,zi)
         res = tc.trapz(tc.trapz(dCl, mu_list, dim=-1), kk_list, dim=-1)
         if resprint: print(res)
         return tc.trapz(tc.trapz(dCl, mu_list, dim=-1), kk_list, dim=-1), dCl, kk, mu
