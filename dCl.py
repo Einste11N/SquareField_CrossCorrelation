@@ -420,7 +420,7 @@ class Cl_kSZ2_HI2():
 
         return dCl_res_beam
 
-    def dCl_HI2(self, zi, l, l_min = 190, l_mid = None, l_max = None, N_l = 500, N_mu = 120, beam=True):
+    def dCl_HI2(self, zi, l, l_min = 190, l_mid = None, l_max = None, N_l = 500, N_mu = 120, beam=True, noise = 0.):
         '''
             We denote k' as kk, theta_kk as the angle
             k = l / chi, theta_k = 0
@@ -444,7 +444,8 @@ class Cl_kSZ2_HI2():
 
         ##################################################
         # Evaluation
-        dCl = kk**2 * self.Power_matter_1d(kk, zi) * self.Power_matter_1d(k_m_kk_norm, zi) / (2*tc.pi)**2
+        Pnoise = noise / (1 + self.z_list[zi])**2 / self.Tb_of_z[zi]**2 / self.Beam_HI(l,zi)**2
+        dCl = kk**2 * (self.Power_matter_1d(kk, zi) + Pnoise) * (self.Power_matter_1d(k_m_kk_norm, zi) + Pnoise) / (2*tc.pi)**2
 
         ##################################################
         # Integral
