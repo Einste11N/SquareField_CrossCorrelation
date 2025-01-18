@@ -444,7 +444,7 @@ class Cl_kSZ2_HI2():
 
         ##################################################
         # Evaluation
-        Pnoise = noise / (1 + self.z_list[zi])**2 / self.Tb_of_z[zi]**2 / self.Beam_HI(l,zi)**2
+        Pnoise = noise / (1 + self.z_list[zi])**2 / self.Tb_of_z[zi]**2 / self.Beam_HI(l,zi)**2 
         dCl = kk**2 * (self.Power_matter_1d(kk, zi) + Pnoise) * (self.Power_matter_1d(k_m_kk_norm, zi) + Pnoise) / (2*tc.pi)**2
 
         ##################################################
