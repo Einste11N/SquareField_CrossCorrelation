@@ -450,14 +450,14 @@ class Cl_kSZ2_HI2():
         ##################################################
         # Integral
         if beam=='both':
-            dCl_beam = dCl * self.Beam_HI(l,zi)**2
+            dCl_beam = dCl * self.Beam_HI(l,zi)**4
 
             dCl_res_nobeam = tc.trapz(tc.trapz(dCl, mu_list, dim=-1), kk_list, dim=-1)
             dCl_res_beam = tc.trapz(tc.trapz(dCl_beam, mu_list, dim=-1), kk_list, dim=-1)
             return dCl_res_nobeam, dCl_res_beam
 
         elif beam:
-            dCl_beam = dCl * self.Beam_HI(l,zi)**2
+            dCl_beam = dCl * self.Beam_HI(l,zi)**4
             return tc.trapz(tc.trapz(dCl_beam, mu_list, dim=-1), kk_list, dim=-1)
             
         else:
