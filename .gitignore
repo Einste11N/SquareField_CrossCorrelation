@@ -13,6 +13,7 @@ testdata/*
 # NoBeam_data/*
 
 # test and debug files
+test.py
 test.ipynb
 classtest.ipynb
 testdata.npy

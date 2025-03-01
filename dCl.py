@@ -74,9 +74,8 @@ class Cl_kSZ2_HI2():
         Z_MEAN = 0.45 # mean redshift for HI observation
         FREQ_HI = 1420. # in unit MHz
         self.SIGMA_HI2 = (0.0115 * 1000. * (1. + self.z_array) / FREQ_HI)**2
-        self.SIGMA_KSZ2 = (np.pi/180 / 60)**2 / 8 / np.log(2)
         self.SIGMA_HI_MEAN2 = (0.0115 * 1000. * (1. + Z_MEAN) / FREQ_HI)**2
-        self.SIGMA_KSZ_MEAN2 = (np.pi/180 / 60)**2 / 8 / np.log(2)
+        self.SIGMA2_KSZ = (np.pi/180 / 60)**2 / 8 / np.log(2)
 
         # Arrays used for matter power spectrum interpolation
         # adding infrared asymptotic behavior (P proportional to k)
@@ -108,11 +107,8 @@ class Cl_kSZ2_HI2():
         power = tc.where(tc.logical_and(kh>ir_cut, kh<uv_cut), itp, 0.)
         return power
 
-    def Beam_kSZ(self, l, zindex=0, use_mean = False):
-        if use_mean:
-            return tc.exp(-l**2 * self.SIGMA_KSZ_MEAN2 / 2)
-        else:
-            return tc.exp(-l**2 * self.SIGMA_KSZ2 / 2)
+    def Beam_kSZ(self, l):
+        return tc.exp(-l**2 * self.SIGMA2_KSZ / 2)
     
     def Beam_HI(self, l, zindex=0, use_mean = False):
         if use_mean:
@@ -769,9 +765,8 @@ class Cl_kSZ2():
         self.BGEvolution = backgrounds
 
         # Instruments' properties
-        theta_FWHM = tc.tensor([1./60.]) # in unit deg
-        self.SIGMA_KSZ2 = (np.pi/180 * theta_FWHM)**2 / 8 / np.log(2)
-        self.SIGMA_KSZ_MEAN2 = (np.pi/180 * theta_FWHM)**2 / 8 / np.log(2)
+        theta_FWHM = tc.tensor([1.4/60.]) # in unit deg
+        self.SIGMA2_KSZ = (np.pi/180 * theta_FWHM)**2 / 8 / np.log(2)
 
         # Arrays used for matter power spectrum interpolation
         # adding infrared asymptotic behavior (P proportional to k)
@@ -803,11 +798,8 @@ class Cl_kSZ2():
         power = tc.where(tc.logical_and(kh>ir_cut, kh<uv_cut), itp, 0.)
         return power
 
-    def Beam_kSZ(self, l, zindex=0, use_mean = False):
-        if use_mean:
-            return tc.exp(-l**2 * self.SIGMA_KSZ_MEAN2 / 2)
-        else:
-            return tc.exp(-l**2 * self.SIGMA_KSZ2 / 2)
+    def Beam_kSZ(self, l):
+        return tc.exp(-l**2 * self.SIGMA2_KSZ / 2)
 
     def dCl_kSZ(self, zi, l, l_min = 190, l_max = None, N_l = 1100, N_mu = 200, beam=True):
         '''
@@ -894,11 +886,11 @@ class Cl_kSZ2():
 
 
         C1 = tc.where(tc.logical_and(l>=tc.tensor(ll_min), l<=tc.tensor(ll_max)),
-                      torch_interp1d(lg_l_list, Cl_kSZ, tc.log10(l)), 
-                      tc.tensor(0.))
+                    torch_interp1d(lg_l_list, Cl_kSZ, tc.log10(l)), 
+                    tc.tensor(0.))
         C2 = tc.where(tc.logical_and(l_m_ll_norm>=tc.tensor(ll_min), l_m_ll_norm<=tc.tensor(ll_max)), 
-                      torch_interp1d(lg_l_list, Cl_kSZ, tc.log10(l_m_ll_norm)), 
-                      tc.tensor(0.))
+                    torch_interp1d(lg_l_list, Cl_kSZ, tc.log10(l_m_ll_norm)), 
+                    tc.tensor(0.))
 
         CL = 2 * tc.trapz(tc.trapz(C1*C2*ll, theta_list, dim=-1), ll_list, dim=-1)
 
@@ -914,8 +906,8 @@ class Cl_kSZ2():
         if l_max == None: l_max = 2 * np.max([200., l])
 
         kk_list = tc.hstack([tc.linspace(1e-4, 1, 11)[:-1], 
-                             tc.linspace(1, l_min, 391)[:-1],
-                             tc.linspace(l_min, l_max, N_l)]) / chi
+                            tc.linspace(1, l_min, 391)[:-1],
+                            tc.linspace(l_min, l_max, N_l)]) / chi
         mu_list = tc.linspace(-1, 1, N_mu)
 
         kk, mu = tc.meshgrid(kk_list, mu_list, indexing='ij')
