@@ -40,8 +40,8 @@ def generate_Ntheta(l1, pz_chi):
     return 300 + 3 * tc.tensor(l1 /50 / pz_chi**(0.1), dtype=tc.int32)
     
 
-def compute(zindex, l, pz, l1, lmax, Ntheta):
-    res_beam, res_nobeam = dCl_obj.dCl_lm_Term5(zindex, l, l1, pz, l_max=lmax, N_theta=Ntheta, beam='both')
+def compute(zindex, l, pz, l1, lmax, Ntheta, beam=True):
+    res_beam, res_nobeam = dCl_obj.dCl_lm_Term5(zindex, l, l1, pz, l_max=lmax, N_theta=Ntheta, beam=beam)
     return res_beam, res_nobeam
 
 N_JOBS = 4
@@ -56,31 +56,23 @@ length_total = length_p * (zend - zstart)
 length100 = length_total / 100
 time0 = time.time()
 
-
-
 for zindex in range(zstart, zend):
     res_beam = []
-    res_nobeam = []
     for i, p in enumerate(params):
         l, pz = p
         chi = dCl_obj.chi_of_z[zindex]    
         lmax = generate_lmax(l1_list, pz*chi)
         Ntheta = generate_Ntheta(l1_list, pz*chi)
-
         
         if do_parallel:
-            res_p = Parallel(n_jobs=N_JOBS, prefer='threads')(delayed(compute)(zindex, l, pz, l1_list[l1_index], lmax[l1_index], Ntheta[l1_index]) 
+            res_beam_p = Parallel(n_jobs=N_JOBS, prefer='threads')(delayed(compute)(zindex, l, pz, l1_list[l1_index], lmax[l1_index], Ntheta[l1_index], beam=True) 
                                                         for l1_index in range(len(l1_list)))
-            res_beam_p = [r[0] for r in res_p]
-            res_nobeam_p = [r[1] for r in res_p]
             res_beam.append(res_beam_p)
-            res_nobeam.append(res_nobeam_p)
 
         else:
             for l1_index in range(len(l1_list)):
-                res1, res2 = compute(zindex, l, pz, l1_list[l1_index], lmax[l1_index], Ntheta[l1_index])
-                res_beam.append(res1)
-                res_nobeam.append(res2)
+                res_i = compute(zindex, l, pz, l1_list[l1_index], lmax[l1_index], Ntheta[l1_index], beam=True)
+                res_beam.append(res_i)
 
         time_i = time.time() - time0
         total_index = (zindex - zstart) * length_p + i
@@ -90,7 +82,6 @@ for zindex in range(zstart, zend):
     
     print(' ')
     res_beam_w = tc.tensor(res_beam).reshape([len(l_list), len(pz_list), len(l1_list)])
-    res_nobeam_w = tc.tensor(res_nobeam).reshape([len(l_list), len(pz_list), len(l1_list)])
     print('saving data...')
     np.save('Beam_data/z_' + zmin_text + '_' + zmax_text + f'/Cl_cross_{zindex}.npy', res_beam_w)
-    np.save(f'NoBeam_data/z_' + zmin_text + '_' + zmax_text + f'/Cl_cross_{zindex}.npy', res_nobeam_w)
+
