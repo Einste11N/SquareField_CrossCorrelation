@@ -3,7 +3,6 @@ tc.set_default_dtype(tc.float64)
 
 import numpy as np
 import scipy.constants as sc
-from scipy.interpolate import interp1d
 import camb
 from copy import deepcopy
 
@@ -18,7 +17,7 @@ NE = 5.13e-7  # in unit 1/Mpc
 
 class Cl_kSZ2_HI2():
 
-    def __init__(self, z_array, Tb = 1.8e-1, OmHIh = 2.45e-4, H0 = 67.75, ombh2 = 0.022):
+    def __init__(self, z_array, Tb = 1.8e-1, OmHIh = 2.45e-4, H0 = 67.75, ombh2 = 0.022, filter_path = 'Data/fl_and_l_kSZ.npy'):
         
         ##################################################s
         # Define the cosmological parameters
@@ -75,11 +74,21 @@ class Cl_kSZ2_HI2():
         FREQ_HI = 1420. # in unit MHz
         self.SIGMA_HI2 = (0.0115 * 1000. * (1. + self.z_array) / FREQ_HI)**2
         self.SIGMA_HI_MEAN2 = (0.0115 * 1000. * (1. + Z_MEAN) / FREQ_HI)**2
-        self.SIGMA2_KSZ = (np.pi/180 / 60)**2 / 8 / np.log(2)
+
+        self.theta_FWHM = tc.tensor([1.4/60.]) # in unit deg
+        self.SIGMA2_KSZ = (np.pi/180 * self.theta_FWHM)**2 / 8 / np.log(2)
+
+        # read in the filter data
+        fl_and_l_kSZ = np.load(filter_path)
+        self.l_kSZ = tc.tensor(fl_and_l_kSZ[0])
+        self.Fl_kSZ = tc.tensor(fl_and_l_kSZ[1])
 
         # Arrays used for matter power spectrum interpolation
         # adding infrared asymptotic behavior (P proportional to k)
         self.kh_array_itp, self.Pm_itp = self.cutoff()
+
+    def set_theta_FWHM_CMB(self, theta):
+        self.theta_FWHM = tc.tensor([theta])
 
     def evaluate_tau(self, H0, ombh2):
         obj = Cl_kSZ2(zmax=self.z_array[-1], Nz=40, H0=H0, ombh2=ombh2)
@@ -106,6 +115,9 @@ class Cl_kSZ2_HI2():
         itp = 10.**torch_interp1d(tc.log10(self.kh_array_itp), tc.log10((self.Pm_itp)[zindex]), tc.log10(kh))
         power = tc.where(tc.logical_and(kh>ir_cut, kh<uv_cut), itp, 0.)
         return power
+
+    def Filter_kSZ(self, l):
+        return torch_interp1d(self.l_kSZ, self.Fl_kSZ, l)
 
     def Beam_kSZ(self, l):
         return tc.exp(-l**2 * self.SIGMA2_KSZ / 2)
@@ -193,14 +205,14 @@ class Cl_kSZ2_HI2():
         if beam=='both':
             l_m_lp_p_lm_norm =  tc.sqrt( (lsquare + lmsquare + lpsquare + 2*l_dot_lm - 2*l_dot_lp - 2*lm_dot_lp).abs() )
             lp_m_lm_norm =      tc.sqrt( (lmsquare + lpsquare - 2*lm_dot_lp).abs() )
-            dCl_beam =          dCl_nobeam * self.Beam_HI(l) * self.Beam_kSZ(l_m_lp_p_lm_norm) * self.Beam_kSZ(lp_m_lm_norm) 
+            dCl_beam =          dCl_nobeam * self.Beam_HI(l, zi)**2 * self.Filter_kSZ(l_m_lp_p_lm_norm) * self.Filter_kSZ(lp_m_lm_norm) 
             dCl_res_beam =      tc.trapz(tc.trapz(tc.trapz(dCl_beam, tp_list, dim=-1), lp_list, dim=-1), tm_list, dim=-1)
             dCl_res_nobeam =    tc.trapz(tc.trapz(tc.trapz(dCl_nobeam, tp_list, dim=-1), lp_list, dim=-1), tm_list, dim=-1)
             return dCl_res_beam, dCl_res_nobeam
         elif beam:
             l_m_lp_p_lm_norm =  tc.sqrt( (lsquare + lmsquare + lpsquare + 2*l_dot_lm - 2*l_dot_lp - 2*lm_dot_lp).abs() )
             lp_m_lm_norm =      tc.sqrt( (lmsquare + lpsquare - 2*lm_dot_lp).abs() )
-            dCl_beam =          dCl_nobeam * self.Beam_HI(l) * self.Beam_kSZ(l_m_lp_p_lm_norm) * self.Beam_kSZ(lp_m_lm_norm) 
+            dCl_beam =          dCl_nobeam * self.Beam_HI(l, zi)**2 * self.Filter_kSZ(l_m_lp_p_lm_norm) * self.Filter_kSZ(lp_m_lm_norm) 
             dCl_res_beam =      tc.trapz(tc.trapz(tc.trapz(dCl_beam, tp_list, dim=-1), lp_list, dim=-1), tm_list, dim=-1)
             return dCl_res_beam
         else:
@@ -273,14 +285,14 @@ class Cl_kSZ2_HI2():
         if beam=='both':
             l_m_lp_p_lm_norm =  tc.sqrt( (lsquare/4 + Lmsquare + lpsquare + l_dot_Lm - l_dot_lp - 2*lp_dot_Lm).abs() )
             lp_m_lm_norm =      tc.sqrt( (lsquare/4 + Lmsquare + lpsquare - l_dot_Lm + l_dot_lp - 2*lp_dot_Lm).abs() )
-            dCl_beam =          dCl_nobeam * self.Beam_HI(l) * self.Beam_kSZ(l_m_lp_p_lm_norm) * self.Beam_kSZ(lp_m_lm_norm) 
+            dCl_beam =          dCl_nobeam * self.Beam_HI(l, zi)**2 * self.Filter_kSZ(l_m_lp_p_lm_norm) * self.Filter_kSZ(lp_m_lm_norm) 
             dCl_res_beam =      tc.trapz(tc.trapz(tc.trapz(dCl_beam, Tm_list, dim=-1), Lm_list, dim=-1), tp_list, dim=-1)
             dCl_res_nobeam =    tc.trapz(tc.trapz(tc.trapz(dCl_nobeam, Tm_list, dim=-1), Lm_list, dim=-1), tp_list, dim=-1)
             return dCl_res_beam, dCl_res_nobeam
         elif beam:
             l_m_lp_p_lm_norm =  tc.sqrt( (lsquare/4 + Lmsquare + lpsquare + l_dot_Lm - l_dot_lp - 2*lp_dot_Lm).abs() )
             lp_m_lm_norm =      tc.sqrt( (lsquare/4 + Lmsquare + lpsquare - l_dot_Lm + l_dot_lp - 2*lp_dot_Lm).abs() )
-            dCl_beam =          dCl_nobeam * self.Beam_HI(l) * self.Beam_kSZ(l_m_lp_p_lm_norm) * self.Beam_kSZ(lp_m_lm_norm) 
+            dCl_beam =          dCl_nobeam * self.Beam_HI(l, zi)**2 * self.Filter_kSZ(l_m_lp_p_lm_norm) * self.Filter_kSZ(lp_m_lm_norm) 
             dCl_res_beam =      tc.trapz(tc.trapz(tc.trapz(dCl_beam, Tm_list, dim=-1), Lm_list, dim=-1), tp_list, dim=-1)
             return dCl_res_beam
         else:
@@ -346,7 +358,7 @@ class Cl_kSZ2_HI2():
         l_m_lp_p_lm_norm =  tc.sqrt( (lsquare + lmsquare + lpsquare + 2*l_dot_lm - 2*l_dot_lp - 2*lm_dot_lp).abs() )
         lp_m_lm_norm =      tc.sqrt( (lmsquare + lpsquare - 2*lm_dot_lp).abs() )
         dCl_nobeam = dCl * 4 * lm * lp
-        dCl_beam = dCl_nobeam * self.Beam_HI(l) * self.Beam_kSZ(l_m_lp_p_lm_norm) * self.Beam_kSZ(lp_m_lm_norm) 
+        dCl_beam = dCl_nobeam * self.Beam_HI(l, zi)**2 * self.Filter_kSZ(l_m_lp_p_lm_norm) * self.Filter_kSZ(lp_m_lm_norm) 
 
         dCl_res_beam = tc.trapz(tc.trapz(dCl_beam, tp_list, dim=-1), lp_list, dim=-1)
 
@@ -410,7 +422,7 @@ class Cl_kSZ2_HI2():
         l_m_lp_p_lm_norm =  tc.sqrt( (lsquare/4 + Lmsquare + lpsquare + l_dot_Lm - l_dot_lp - 2*lp_dot_Lm).abs() )
         lp_m_lm_norm =      tc.sqrt( (lsquare/4 + Lmsquare + lpsquare - l_dot_Lm + l_dot_lp - 2*lp_dot_Lm).abs() )
         dCl_nobeam = dCl * 4 * Lm * lp
-        dCl_beam = dCl_nobeam * self.Beam_HI(l) * self.Beam_kSZ(l_m_lp_p_lm_norm) * self.Beam_kSZ(lp_m_lm_norm) 
+        dCl_beam = dCl_nobeam * self.Beam_HI(l, zi)**2 * self.Filter_kSZ(l_m_lp_p_lm_norm) * self.Filter_kSZ(lp_m_lm_norm) 
 
         dCl_res_beam = tc.trapz(tc.trapz(dCl_beam, Tm_list, dim=-1), Lm_list, dim=-1)
 
@@ -527,7 +539,7 @@ class Cl_kSZ2_HI2():
 
         if beam=='both':
             dCl_nobeam = dCl * 4 * lm * lp
-            dCl_beam = dCl_nobeam * self.Beam_kSZ(l_m_lp_p_lm_norm) * self.Beam_kSZ(lp_m_lm_norm) * self.Beam_HI(l)
+            dCl_beam = dCl_nobeam * self.Filter_kSZ(l_m_lp_p_lm_norm) * self.Filter_kSZ(lp_m_lm_norm) * self.Beam_HI(l,zi)**2
 
             if dim==3:
                 dCl_res_nobeam = tc.trapz(tc.trapz(tc.trapz(dCl_nobeam, tp_list, dim=-1), lp_list, dim=-1), tm_list, dim=-1)
@@ -545,7 +557,7 @@ class Cl_kSZ2_HI2():
                 return dCl_res_nobeam, dCl_res_beam
 
         elif beam:
-            dCl *= 4 * lm * lp * self.Beam_kSZ(l_m_lp_p_lm_norm) * self.Beam_kSZ(lp_m_lm_norm) * self.Beam_HI(l)
+            dCl *= 4 * lm * lp * self.Filter_kSZ(l_m_lp_p_lm_norm) * self.Filter_kSZ(lp_m_lm_norm) * self.Beam_HI(l,zi)**2
         else:
             dCl *= 4 * lm * lp
 
@@ -633,7 +645,7 @@ class Cl_kSZ2_HI2():
 
         if beam=='both':
             dCl_nobeam = dCl * 4 * Lm * lp
-            dCl_beam = dCl_nobeam * self.Beam_kSZ(l_m_lp_p_lm_norm) * self.Beam_kSZ(lp_m_lm_norm) * self.Beam_HI(l)
+            dCl_beam = dCl_nobeam * self.Filter_kSZ(l_m_lp_p_lm_norm) * self.Filter_kSZ(lp_m_lm_norm) * self.Beam_HI(l,zi)**2
 
             if dim==3:
                 dCl_res_nobeam = tc.trapz(tc.trapz(tc.trapz(dCl_nobeam, Tm_list, dim=-1), Lm_list, dim=-1), tp_list, dim=-1)
@@ -651,7 +663,7 @@ class Cl_kSZ2_HI2():
                 return dCl_res_nobeam, dCl_res_beam
 
         elif beam:
-            dCl *= 4 * Lm * lp * self.Beam_kSZ(l_m_lp_p_lm_norm) * self.Beam_kSZ(lp_m_lm_norm) * self.Beam_HI(l)
+            dCl *= 4 * Lm * lp * self.Filter_kSZ(l_m_lp_p_lm_norm) * self.Filter_kSZ(lp_m_lm_norm) * self.Beam_HI(l,zi)**2
         else:
             dCl *= 4 * Lm * lp
 
@@ -765,13 +777,16 @@ class Cl_kSZ2():
         self.BGEvolution = backgrounds
 
         # Instruments' properties
-        theta_FWHM = tc.tensor([1.4/60.]) # in unit deg
-        self.SIGMA2_KSZ = (np.pi/180 * theta_FWHM)**2 / 8 / np.log(2)
+        self.theta_FWHM = tc.tensor([1.4/60.]) # in unit deg
+        self.SIGMA2_KSZ = (np.pi/180 * self.theta_FWHM)**2 / 8 / np.log(2)
 
         # Arrays used for matter power spectrum interpolation
         # adding infrared asymptotic behavior (P proportional to k)
         self.kh_array_itp, self.Pm_itp = self.cutoff()
         self.v_rms = self.compute_v_rms()
+
+    def set_theta_FWHM_CMB(self, theta):
+        self.theta_FWHM = tc.tensor([theta])
 
     def compute_v_rms(self):
         Pvv_k2 = self.bv_of_z[:,None]**2 * self.Pm_itp / (2*tc.pi**2)
@@ -814,7 +829,7 @@ class Cl_kSZ2():
 
         if k > 100.:
             dCl = self.Power_matter_1d(k, zi) * self.v_rms[zi] / 3.
-            dCl_beam = dCl * self.Beam_kSZ(l,zi)
+            dCl_beam = dCl * self.Beam_kSZ(l)**2
             if beam=='both':    return dCl, dCl_beam
             elif beam:          return dCl_beam                
             else:               return dCl
@@ -843,14 +858,14 @@ class Cl_kSZ2():
             ##################################################
             # Integral
             if beam=='both':
-                dCl_beam = dCl * self.Beam_kSZ(l,zi)
+                dCl_beam = dCl * self.Beam_kSZ(l)**2
 
                 dCl_res_nobeam = tc.trapz(tc.trapz(dCl, mu_list, dim=-1), kk_list, dim=-1)
                 dCl_res_beam = tc.trapz(tc.trapz(dCl_beam, mu_list, dim=-1), kk_list, dim=-1)
                 return dCl_res_nobeam, dCl_res_beam
 
             elif beam:
-                dCl_beam = dCl * self.Beam_kSZ(l,zi)
+                dCl_beam = dCl * self.Beam_kSZ(l)**2
                 return tc.trapz(tc.trapz(dCl_beam, mu_list, dim=-1), kk_list, dim=-1)
                 
             else:
@@ -927,7 +942,7 @@ class Cl_kSZ2():
         ##################################################
         # Integral
         if beam=='both':
-            dCl_beam = dCl * self.Beam_kSZ(l,zi)
+            dCl_beam = dCl * self.Beam_kSZ(l)**2
 
             dCl_res_nobeam = tc.trapz(tc.trapz(dCl, mu_list, dim=-1), kk_list, dim=-1)
             dCl_res_beam = tc.trapz(tc.trapz(dCl_beam, mu_list, dim=-1), kk_list, dim=-1)
@@ -935,7 +950,7 @@ class Cl_kSZ2():
             return dCl_res_nobeam, dCl_res_beam, dCl, dCl_beam, kk, mu
 
         elif beam:
-            dCl = dCl * self.Beam_kSZ(l,zi)
+            dCl = dCl * self.Beam_kSZ(l)**2
         res = tc.trapz(tc.trapz(dCl, mu_list, dim=-1), kk_list, dim=-1)
         if resprint: print(res)
         return tc.trapz(tc.trapz(dCl, mu_list, dim=-1), kk_list, dim=-1), dCl, kk, mu

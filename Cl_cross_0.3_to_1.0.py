@@ -14,7 +14,7 @@ zmax_text = '{:.2f}'.format(zmax)
 zlist = tc.linspace(zmin, zmax, Nz)
 dCl_obj = dCl.Cl_kSZ2_HI2(zlist)
 
-l_list = tc.linspace(30, 300, 19)
+l_list = tc.hstack([tc.linspace(30, 300, 19), tc.linspace(330, 600, 10)])
 pz_list = 10.**tc.linspace(-3,-1, 16)
 
 params = []
@@ -26,10 +26,10 @@ print('redshift from ' + zmin_text + ' to ' + zmax_text)
 
 def generate_l1_list():
     return tc.hstack([10.**tc.linspace(-4, 0, 5)[:-1], 
-                      10.**tc.linspace(0, 1, 6)[:-1], 
-                      tc.linspace(10, 300, 59)[:-1], 
-                      10.**tc.linspace(np.log10(300), 3, 14)[:-1], 
-                      10.**tc.linspace(3, 4, 10)])
+                        10.**tc.linspace(0, 1, 6)[:-1], 
+                        tc.linspace(10, 300, 59)[:-1], 
+                        10.**tc.linspace(np.log10(300), 3, 14)[:-1], 
+                        10.**tc.linspace(3, 4, 10)])
 
 def generate_lmax(l1, pz_chi):
     lmax = 2. * (l1 + pz_chi)
@@ -45,7 +45,7 @@ def compute(zindex, l, pz, l1, lmax, Ntheta):
     return res_beam, res_nobeam
 
 N_JOBS = 4
-do_parallel = True
+do_parallel = False
 
 l1_list = generate_l1_list()
 
