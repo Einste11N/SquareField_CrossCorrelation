@@ -41,11 +41,15 @@ def generate_Ntheta(l1, pz_chi):
     
 
 def compute(zindex, l, pz, l1, lmax, Ntheta, beam=True):
-    res_beam, res_nobeam = dCl_obj.dCl_lm_Term5(zindex, l, l1, pz, l_max=lmax, N_theta=Ntheta, beam=beam)
-    return res_beam, res_nobeam
+    if beam=='both':
+        res_beam, res_nobeam = dCl_obj.dCl_lm_Term5(zindex, l, l1, pz, l_max=lmax, N_theta=Ntheta, beam='both')
+        return res_beam, res_nobeam
+    else:
+        res = dCl_obj.dCl_lm_Term5(zindex, l, l1, pz, l_max=lmax, N_theta=Ntheta, beam=beam)
+        return res
 
 N_JOBS = 4
-do_parallel = False
+do_parallel = True
 
 l1_list = generate_l1_list()
 
