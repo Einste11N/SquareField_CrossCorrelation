@@ -53,7 +53,7 @@ do_parallel = True
 
 l1_list = generate_l1_list()
 
-zstart = 1
+zstart = 0
 zend = len(zlist)
 length_p = len(params)
 length_total = length_p * (zend - zstart)

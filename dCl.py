@@ -17,7 +17,7 @@ NE = 5.13e-7  # in unit 1/Mpc
 
 class Cl_kSZ2_HI2():
 
-    def __init__(self, z_array, Tb = 1.8e-1, OmHIh = 2.45e-4, H0 = 67.75, ombh2 = 0.022, filter_path = 'Data/Fl_and_l_kSZ.npy'):
+    def __init__(self, z_array, Tb = 1.8e-1, OmHIh = 2.45e-4, H0 = 67.75, ombh2 = 0.022, Filter_path = r'Data/Fl_and_l_kSZ.npy'):
         
         ##################################################s
         # Define the cosmological parameters
@@ -79,7 +79,7 @@ class Cl_kSZ2_HI2():
         self.SIGMA2_KSZ = (np.pi/180 * self.theta_FWHM)**2 / 8 / np.log(2)
 
         # read in the filter data
-        fl_and_l_kSZ = np.load(filter_path)
+        fl_and_l_kSZ = np.load(Filter_path)
         self.l_kSZ = tc.tensor(fl_and_l_kSZ[0])
         self.Fl_kSZ = tc.tensor(fl_and_l_kSZ[1])
 
@@ -139,7 +139,140 @@ class Cl_kSZ2_HI2():
         return z_dependence / kh
         # cut off the divergence at infrared
         # return tc.where(kh > cut_off, z_dependence / kh, z_dependence / cut_off)
+
+
+
+    def dCl_Term(self, zi, l, l1, t1, Npz = 81, Npp = 1000, N_theta = 100):
+        '''
+        Integrand for Term 5, 9, 10, 11, over convolution space p = p_perp + p_z zhat
+        Assumming both bias for electron and for HI are equal to 1, b_v(k)=aHf b_e / k
+        '''
+        chi = self.chi_of_z[zi]
+        pl = tc.tensor([l / chi])
+        pl1 = tc.tensor([l1 / chi])
+        t1 = tc.tensor([t1])
+
+        # Make the mesh grid for pz, p_perp and theta_p
+        pz_list = 10.**tc.linspace(-4, 0, Npz)
+        pp_list = tc.hstack([(10**tc.arange(-7, -3, 0.1))[:-1], tc.linspace(1e-3, 1, Npp)])
+        tp_list = tc.linspace(0, 2*tc.pi, N_theta)
+        pz, pp, tp = tc.meshgrid(pz_list, pp_list, tp_list, indexing='ij')
+
+        # Pre-define useful varibales and constants
+        plsquare = pl**2
+        pl1square = pl1**2
+        ppsquare = pp**2
+        pzsquare = pz**2
+
+        pl_dot_pp = Polar_dot(pl, 0., pp, tp)
+        pl1_dot_pp = Polar_dot(pl1, t1, pp, tp)
+
+        # Pre-Evaluate the k modes
+        k_pl_plus_p_norm  = tc.sqrt( plsquare  + ppsquare + 2*pl_dot_pp  + pzsquare )
+        k_pl1_plus_p_norm = tc.sqrt( pl1square + ppsquare + 2*pl1_dot_pp + pzsquare )
+        k_p = tc.sqrt( ppsquare + pzsquare )
+
+        # Calculate the matter power spectrum
+        P_pl_plus_p_norm  = self.Power_matter_1d(k_pl_plus_p_norm, zi)
+        P_pl1_plus_p_norm = self.Power_matter_1d(k_pl1_plus_p_norm, zi)
+        P_p = self.Power_matter_1d(k_p, zi)
+
+        ##################################################
+        # Evaluate the integrand
+        # Power sepctrum contribution
+        dCl = P_pl_plus_p_norm * P_pl1_plus_p_norm  * P_p
+        # Geometric factor
+        Geo  = 1 / (k_pl_plus_p_norm  * k_p)**2                 # Term 5
+        Geo -= 1 / (k_pl1_plus_p_norm * k_pl_plus_p_norm)**2    # Term 9
+        Geo -= 1 / (k_pl1_plus_p_norm * k_p)**2                 # Term 10
+        Geo += 1 / k_p**4                                       # Term 11
+        Geo *= pzsquare * self.bv_of_z[zi]**2
         
+        dCl = dCl * Geo * pp
+
+        # Delete redundant variables to save memory
+        del(k_pl_plus_p_norm, k_pl1_plus_p_norm, k_p)
+
+        ##################################################
+        # Integrate over p space
+
+        dCl_res = tc.trapz(tc.trapz(tc.trapz(dCl, tp_list, dim=-1), pp_list, dim=-1), pz_list, dim=-1)
+        return dCl_res
+
+
+
+    def dCl_Term_test(self, zi, l, l1, t1, Npz = 81, Npp = 1000, N_theta = 100, dim=2, pz_fix=1e-8, debug=True, resprint=True):
+        '''
+        Integrand for Term 5, 9, 10, 11, over convolution space p = p_perp + p_z zhat
+        Assumming both bias for electron and for HI are equal to 1, b_v(k)=aHf b_e / k
+        '''
+        chi = self.chi_of_z[zi]
+        pl = tc.tensor([l / chi])
+        pl1 = tc.tensor([l1 / chi])
+        t1 = tc.tensor([t1])
+
+        # Make the mesh grid for pz, p_perp and theta_p
+        pp_list = tc.hstack([(10**tc.arange(-7, -3, 0.1))[:-1], tc.linspace(1e-3, 1, Npp)])
+        tp_list = tc.linspace(0, 2*tc.pi, N_theta)
+        if dim==3:
+            pz_list = 10.**tc.linspace(-4, 0, Npz)
+            pz, pp, tp = tc.meshgrid(pz_list, pp_list, tp_list, indexing='ij')
+        elif dim==2:
+            pz = pz_fix
+            pp, tp = tc.meshgrid(pp_list, tp_list, indexing='ij')
+
+
+        # Pre-define useful varibales and constants
+        plsquare = pl**2
+        pl1square = pl1**2
+        ppsquare = pp**2
+        pzsquare = pz**2
+
+        pl_dot_pp = Polar_dot(pl, 0., pp, tp)
+        pl1_dot_pp = Polar_dot(pl1, t1, pp, tp)
+
+        # Pre-Evaluate the k modes
+        k_pl_plus_p_norm  = tc.sqrt( plsquare  + ppsquare + 2*pl_dot_pp  + pzsquare )
+        k_pl1_plus_p_norm = tc.sqrt( pl1square + ppsquare + 2*pl1_dot_pp + pzsquare )
+        k_p = tc.sqrt( ppsquare + pzsquare )
+
+        # Calculate the matter power spectrum
+        P_pl_plus_p_norm  = self.Power_matter_1d(k_pl_plus_p_norm, zi)
+        P_pl1_plus_p_norm = self.Power_matter_1d(k_pl1_plus_p_norm, zi)
+        P_p = self.Power_matter_1d(k_p, zi)
+
+        ##################################################
+        # Evaluate the integrand
+        # Power sepctrum contribution
+        dCl = P_pl_plus_p_norm * P_pl1_plus_p_norm  * P_p
+        # Geometric factor
+        Geo  = 1 / (k_pl_plus_p_norm  * k_p)**2                 # Term 5
+        Geo -= 1 / (k_pl1_plus_p_norm * k_pl_plus_p_norm)**2    # Term 9
+        Geo -= 1 / (k_pl1_plus_p_norm * k_p)**2                 # Term 10
+        Geo += 1 / k_p**4                                       # Term 11
+        Geo *= pzsquare * self.bv_of_z[zi]**2
+        
+        dCl = dCl * Geo * pp
+
+        # Delete redundant variables to save memory
+        del(k_pl_plus_p_norm, k_pl1_plus_p_norm, k_p)
+
+        ##################################################
+        # Integrate over p space
+
+        if dim == 3:
+            dCl_res = tc.trapz(tc.trapz(tc.trapz(dCl, tp_list, dim=-1), pp_list, dim=-1), pz_list, dim=-1)
+        elif dim == 2:
+            dCl_res = tc.trapz(tc.trapz(dCl, tp_list, dim=-1), pp_list, dim=-1)
+
+        if resprint: print(dCl_res)
+        if debug:
+            return dCl_res, dCl, pp, tp
+
+        return dCl_res
+
+
+
 
     def dCl_lm_Term5(self, zi, l, lm, pz=1e-8, l_min = 1, l_max = 500, N_l = 2000, theta_min = 0., theta_max = 2*tc.pi, N_theta = 300, beam=True):
         '''
