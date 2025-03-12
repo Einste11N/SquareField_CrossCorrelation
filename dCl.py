@@ -17,7 +17,7 @@ NE = 5.13e-7  # in unit 1/Mpc
 
 class Cl_kSZ2_HI2():
 
-    def __init__(self, z_array, Tb = 1.8e-1, OmHIh = 2.45e-4, H0 = 67.75, ombh2 = 0.022, filter_path = 'Data/fl_and_l_kSZ.npy'):
+    def __init__(self, z_array, Tb = 1.8e-1, OmHIh = 2.45e-4, H0 = 67.75, ombh2 = 0.022, filter_path = 'Data/Fl_and_l_kSZ.npy'):
         
         ##################################################s
         # Define the cosmological parameters
@@ -881,31 +881,47 @@ class Cl_kSZ2():
         Cl = tc.trapz(dCl_dchi, self.chi_of_z, dim=-1)
         return Cl
 
-    def Cl_kSZ2(self, l_list = tc.tensor(np.geomspace(10, 1e5, 101)), Cl_kSZ = None, ll_min = 10., ll_max = 1.e5, N_ll = 501, beam=True):
+    def Cl_kSZ2(self, l_list = tc.tensor(np.geomspace(10, 1e5, 101)), Cl_kSZ = None, ll_min = 10., ll_max = 1.e5, N_ll = 501, beam=True, log = True):
         if Cl_kSZ is None:
             Cl_kSZ = tc.empty_like(l_list)
             for i in range(len(l_list)):
-                Cl_kSZ[i] = self.Cl_kSZ_test(l_list[i], beam = beam)
+                Cl_kSZ[i] = self.Cl_kSZ(l_list[i], beam = beam)
 
-        lg_l_list = tc.log10(l_list)
-        # lg_Cl_kSZ = tc.log10(Cl_kSZ)
+        if log:
+            lg_l_list = tc.log10(l_list)
+            # lg_Cl_kSZ = tc.log10(Cl_kSZ)
 
-        ll_list = tc.tensor(np.geomspace(ll_min, ll_max, N_ll))
-        theta_list = tc.linspace(0, tc.pi, 100)
-        l, ll, theta = tc.meshgrid(l_list, ll_list, theta_list)
+            ll_list = tc.tensor(np.geomspace(ll_min, ll_max, N_ll))
+            theta_list = tc.linspace(0, tc.pi, 100)
+            l, ll, theta = tc.meshgrid(l_list, ll_list, theta_list)
 
-        l_m_ll_norm = tc.sqrt(l**2 + ll**2 - 2*l*ll*tc.cos(theta))
+            l_m_ll_norm = tc.sqrt(l**2 + ll**2 - 2*l*ll*tc.cos(theta))
 
-        C1 = tc.empty_like(l)
-        C2 = tc.empty_like(l)
+            C1 = tc.empty_like(l)
+            C2 = tc.empty_like(l)
 
+            C1 = tc.where(tc.logical_and(l>=tc.tensor(ll_min), l<=tc.tensor(ll_max)),
+                        torch_interp1d(lg_l_list, Cl_kSZ, tc.log10(l)), 
+                        tc.tensor(0.))
+            C2 = tc.where(tc.logical_and(l_m_ll_norm>=tc.tensor(ll_min), l_m_ll_norm<=tc.tensor(ll_max)), 
+                        torch_interp1d(lg_l_list, Cl_kSZ, tc.log10(l_m_ll_norm)), 
+                        tc.tensor(0.))
+        else:
+            ll_list = tc.linspace(ll_min, ll_max, N_ll)
+            theta_list = tc.linspace(0, tc.pi, 100)
+            l, ll, theta = tc.meshgrid(l_list, ll_list, theta_list)
 
-        C1 = tc.where(tc.logical_and(l>=tc.tensor(ll_min), l<=tc.tensor(ll_max)),
-                    torch_interp1d(lg_l_list, Cl_kSZ, tc.log10(l)), 
-                    tc.tensor(0.))
-        C2 = tc.where(tc.logical_and(l_m_ll_norm>=tc.tensor(ll_min), l_m_ll_norm<=tc.tensor(ll_max)), 
-                    torch_interp1d(lg_l_list, Cl_kSZ, tc.log10(l_m_ll_norm)), 
-                    tc.tensor(0.))
+            l_m_ll_norm = tc.sqrt(l**2 + ll**2 - 2*l*ll*tc.cos(theta))
+
+            C1 = tc.empty_like(l)
+            C2 = tc.empty_like(l)
+
+            C1 = tc.where(tc.logical_and(l>=tc.tensor(ll_min), l<=tc.tensor(ll_max)),
+                        torch_interp1d(l_list, Cl_kSZ, l), 
+                        tc.tensor(0.))
+            C2 = tc.where(tc.logical_and(l_m_ll_norm>=tc.tensor(ll_min), l_m_ll_norm<=tc.tensor(ll_max)), 
+                        torch_interp1d(l_list, Cl_kSZ, l_m_ll_norm), 
+                        tc.tensor(0.))
 
         CL = 2 * tc.trapz(tc.trapz(C1*C2*ll, theta_list, dim=-1), ll_list, dim=-1)
 
