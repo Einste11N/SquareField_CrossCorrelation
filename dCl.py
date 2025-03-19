@@ -145,7 +145,7 @@ class Cl_kSZ2_HI2():
         # cut off the divergence at infrared
         # return tc.where(kh > cut_off, z_dependence / kh, z_dependence / cut_off)
 
-    def dCl_Term(self, zi, l, l1, t1, Npz = 81, Npp = 1000, N_theta = 100):
+    def dCl_Term(self, zi, l, l1, t1, Npz = 51, Npp = 1000, N_theta = 51):
         '''
         Integrand for Term 5, 9, 10, 11, over convolution space p = p_perp + p_z zhat
         Assumming both bias for electron and for HI are equal to 1, b_v(k)=aHf b_e / k
@@ -202,7 +202,7 @@ class Cl_kSZ2_HI2():
         dCl_res = tc.trapz(tc.trapz(tc.trapz(dCl, tp_list, dim=-1), pp_list, dim=-1), pz_list, dim=-1)
         return dCl_res
 
-    def dCl_Term_test(self, zi, l, l1, t1, Npz = 81, Npp = 1000, N_theta = 100, dim=2, pz_fix=1e-8, debug=True, resprint=True):
+    def dCl_Term_test(self, zi, l, l1, t1, Npz = 51, Npp = 1000, N_theta = 51, dim=2, pz_fix=1e-8, debug=True, resprint=True):
         '''
         Integrand for Term 5, 9, 10, 11, over convolution space p = p_perp + p_z zhat
         Assumming both bias for electron and for HI are equal to 1, b_v(k)=aHf b_e / k
