@@ -420,8 +420,8 @@ class Cl_kSZ2():
         self.kh_array_itp, self.Pm_itp = self.cutoff()
         self.v_rms = self.compute_v_rms()
 
-    def set_theta_FWHM_CMB(self, theta):
-        self.theta_FWHM = tc.tensor([theta])
+    def set_theta_FWHM_CMB(self, theta_deg):
+        self.theta_FWHM = tc.tensor([theta_deg]) # in unit deg
 
     def compute_v_rms(self):
         Pvv_k2 = self.bv_of_z[:,None]**2 * self.Pm_itp / (2*tc.pi**2)
