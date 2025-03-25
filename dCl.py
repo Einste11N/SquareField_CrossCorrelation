@@ -193,6 +193,8 @@ class Cl_kSZ2_HI2():
         
         dCl = dCl * Geo * pp
 
+        dCl = dCl * self.Beam_HI(pp*chi, zi) * self.Beam_HI(tc.sqrt(plsquare  + ppsquare + 2*pl_dot_pp)*chi, zi)
+
         # Delete redundant variables to save memory
         del(k_pl_plus_p_norm, k_pl1_plus_p_norm, k_p)
 
@@ -255,6 +257,8 @@ class Cl_kSZ2_HI2():
         
         dCl = dCl * Geo * pp
 
+        dCl = dCl * self.Beam_HI(pp*chi, zi) * self.Beam_HI(tc.sqrt(plsquare  + ppsquare + 2*pl_dot_pp)*chi, zi)
+
         # Delete redundant variables to save memory
         del(k_pl_plus_p_norm, k_pl1_plus_p_norm, k_p)
 
@@ -272,7 +276,39 @@ class Cl_kSZ2_HI2():
 
         return dCl_res
 
-    def dCl_HI2(self, zi, l, l_min = 190, l_mid = None, l_max = None, N_l = 500, N_mu = 120, beam=True, noise = 0.):
+    def dCl_HI2(self, zi, l, l_min = 190, l_mid = None, l_max = None, Nkz = 51, N_l = 500, N_mu = 81, beam=True, noise = 0.):
+        '''
+            We denote k_perp^prime as kk, theta_kk as the angle
+            k = l / chi, theta_k = 0
+            vector p = k - kk
+        '''
+        ##################################################
+        # Redefine the inputs as tc.tensors and make the meshgrid
+        chi = self.chi_of_z[zi]
+        k = tc.tensor([l]) / chi
+        if l_mid is None : l_mid = 2 * np.max([300., l])
+        if l_max is None : l_max = 100. * chi
+
+        kz_list = 10.**tc.linspace(-4, 1, Nkz)
+        kk_list = tc.hstack([tc.linspace(1e-4, 1, 11)[:-1], 
+                            tc.linspace(1, l_min, 191)[:-1],
+                            tc.linspace(l_min, l_mid, N_l)[:-1],
+                            10**tc.linspace(np.log10(l_mid), np.log10(l_max), 50)]) / chi
+        theta_list = tc.linspace(0, tc.pi, N_mu)
+
+        kz, kk, theta = tc.meshgrid(kz_list, kk_list, theta_list, indexing='ij')
+        k_m_kk_norm = tc.sqrt(k**2 + kk**2 - 2*k*kk*tc.cos(theta))
+
+        ##################################################
+        # Evaluation and Integral
+        Pnoise = noise / (1 + self.z_list[zi])**2 / self.Tb_of_z[zi]**2
+
+        # factor 4=2*2*2 in the front for double of interal over kz and theta
+        dCl = 4*kk * (self.Power_matter_1d(tc.sqrt(kk**2 + kz**2), zi)*self.Beam_HI(kk*chi,zi)**2 + Pnoise) * (self.Power_matter_1d(tc.sqrt(k_m_kk_norm**2 + kz**2), zi)*self.Beam_HI(k_m_kk_norm*chi,zi)**2 + Pnoise) / (2*tc.pi)**3
+
+        return tc.trapz(tc.trapz(tc.trapz(dCl, theta_list, dim=-1), kk_list, dim=-1), kz_list, dim=-1)
+
+    def dCl_HI2_test(self, zi, l, l_min = 190, l_mid = None, l_max = None, Nkz = 51, N_l = 500, N_mu = 120, dim=2, kz_fix=1e-8, noise = 0., beam=True, debug=True, resprint=True):
         '''
             We denote k' as kk, theta_kk as the angle
             k = l / chi, theta_k = 0
@@ -285,80 +321,34 @@ class Cl_kSZ2_HI2():
         if l_mid is None : l_mid = 2 * np.max([300., l])
         if l_max is None : l_max = 100. * chi
 
+        print(l_mid, l_max)
+
+        kz_list = 10.**tc.linspace(-4, 1, Nkz)
         kk_list = tc.hstack([tc.linspace(1e-4, 1, 11)[:-1], 
                             tc.linspace(1, l_min, 191)[:-1],
                             tc.linspace(l_min, l_mid, N_l)[:-1],
                             10**tc.linspace(np.log10(l_mid), np.log10(l_max), 50)]) / chi
-        mu_list = tc.linspace(-1, 1, N_mu)
+        theta_list = tc.linspace(0, tc.pi, N_mu)
 
-        kk, mu = tc.meshgrid(kk_list, mu_list, indexing='ij')
-        k_m_kk_norm = k**2 + kk**2 - 2*k*kk*mu
-
-        ##################################################
-        # Evaluation
-        Pnoise = noise / (1 + self.z_list[zi])**2 / self.Tb_of_z[zi]**2 / self.Beam_HI(l,zi)**2 
-        dCl = kk**2 * (self.Power_matter_1d(kk, zi) + Pnoise) * (self.Power_matter_1d(k_m_kk_norm, zi) + Pnoise) / (2*tc.pi)**2
-
-        ##################################################
-        # Integral
-        if beam=='both':
-            dCl_beam = dCl * self.Beam_HI(l,zi)**4
-
-            dCl_res_nobeam = tc.trapz(tc.trapz(dCl, mu_list, dim=-1), kk_list, dim=-1)
-            dCl_res_beam = tc.trapz(tc.trapz(dCl_beam, mu_list, dim=-1), kk_list, dim=-1)
-            return dCl_res_nobeam, dCl_res_beam
-
-        elif beam:
-            dCl_beam = dCl * self.Beam_HI(l,zi)**4
-            return tc.trapz(tc.trapz(dCl_beam, mu_list, dim=-1), kk_list, dim=-1)
-            
-        else:
-            return tc.trapz(tc.trapz(dCl, mu_list, dim=-1), kk_list, dim=-1)
-
-    def dCl_HI2_test(self, zi, l, l_min = 190, l_mid = None, l_max = None, N_l = 500, N_mu = 120, debug=True, beam=True, resprint=True):
-        '''
-            We denote k' as kk, theta_kk as the angle
-            k = l / chi, theta_k = 0
-            vector p = k - kk
-        '''
-        ##################################################
-        # Redefine the inputs as tc.tensors and make the meshgrid
-        chi = self.chi_of_z[zi]
-        k = tc.tensor([l]) / chi
-        if l_mid is None : l_mid = 2 * np.max([300., l])
-        if l_max is None : l_max = 100. * chi
-
-        kk_list = tc.hstack([tc.linspace(1e-4, 1, 11)[:-1], 
-                            tc.linspace(1, l_min, 191)[:-1],
-                            tc.linspace(l_min, l_mid, N_l)[:-1],
-                            10**tc.linspace(np.log10(l_mid), np.log10(l_max), 50)]) / chi
-        mu_list = tc.linspace(-1, 1, N_mu)
-
-        kk, mu = tc.meshgrid(kk_list, mu_list, indexing='ij')
-        k_m_kk_norm = k**2 + kk**2 - 2*k*kk*mu
+        if dim==3:
+            kz, kk, theta = tc.meshgrid(kz_list, kk_list, theta_list, indexing='ij')
+        elif dim==2:
+            kz = tc.tensor([kz_fix])
+            kk, theta = tc.meshgrid(kk_list, theta_list, indexing='ij')
+        
+        k_m_kk_norm = tc.sqrt(k**2 + kk**2 - 2*k*kk*tc.cos(theta))
 
         ##################################################
-        # Evaluation
-        dCl = kk**2 * self.Power_matter_1d(kk, zi) * self.Power_matter_1d(k_m_kk_norm, zi) / (2*tc.pi)**2
+        # Evaluation and Integral
+        Pnoise = noise / (1 + self.z_list[zi])**2 / self.Tb_of_z[zi]**2
 
-        ##################################################
-        # Integral
-        if beam=='both':
-            dCl_beam = dCl * self.Beam_HI(l,zi)**2
+        # factor 4=2*2*2 in the front for double of interal over kz and theta
+        dCl = 4*kk * (self.Power_matter_1d(tc.sqrt(kk**2 + kz**2), zi) * self.Beam_HI(kk*chi,zi)**2 + Pnoise) * (self.Power_matter_1d(tc.sqrt(k_m_kk_norm**2 + kz**2), zi) * self.Beam_HI(k_m_kk_norm*chi,zi)**2 + Pnoise) / (2*tc.pi)**3
 
-            dCl_res_nobeam = tc.trapz(tc.trapz(dCl, mu_list, dim=-1), kk_list, dim=-1)
-            dCl_res_beam = tc.trapz(tc.trapz(dCl_beam, mu_list, dim=-1), kk_list, dim=-1)
-
-            if resprint: print(dCl_res_nobeam, dCl_res_beam)
-            if debug: return dCl_res_nobeam, dCl_res_beam, dCl, dCl_beam, kk, mu
-            else: return dCl_res_nobeam, dCl_res_beam
-
-        elif beam:
-            dCl = dCl * self.Beam_HI(l,zi)**2
-        dCl_res = tc.trapz(tc.trapz(dCl, mu_list, dim=-1), kk_list, dim=-1)
+        dCl_res = tc.trapz(tc.trapz(dCl, theta_list, dim=-1), kk_list, dim=-1)
 
         if resprint: print(dCl_res)
-        if debug: return dCl_res, dCl, kk, mu
+        if debug: return dCl_res, dCl, kk, theta
         else: return dCl_res
 
 
