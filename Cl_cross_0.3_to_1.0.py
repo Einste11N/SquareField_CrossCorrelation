@@ -16,13 +16,10 @@ dCl_obj = dCl.Cl_kSZ2_HI2(zlist)
 
 print('redshift from ' + zmin_text + ' to ' + zmax_text)
 
-l_list = tc.hstack([tc.linspace(30, 300, 19), tc.linspace(330, 600, 10)])
-t1_list = tc.linspace(0, tc.pi, 60)
-l1_list = tc.hstack([10.**tc.linspace(-4, 0, 5)[:-1], 
-                        10.**tc.linspace(0, 1, 6)[:-1], 
-                        tc.linspace(10, 300, 59)[:-1], 
-                        10.**tc.linspace(np.log10(300), 3, 14)[:-1], 
-                        10.**tc.linspace(3, 4, 10)])
+l_list = tc.hstack([tc.linspace(30, 300, 19), tc.linspace(330, 900, 20)])
+t1_list = tc.linspace(0, tc.pi, 31)
+l1_list = tc.linspace(100, 10000, 34)
+
 
 def compute(zindex, l, l1, t1):
     res = dCl_obj.dCl_Term(zindex, l, l1, t1)
