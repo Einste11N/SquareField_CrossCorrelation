@@ -188,7 +188,7 @@ class Cl_kSZ2_HI2():
         Geo  = 1 / (k_pl_plus_p_norm  * k_p)**2                 # Term 5
         Geo -= 1 / (k_pl1_plus_p_norm * k_pl_plus_p_norm)**2    # Term 9
         Geo -= 1 / (k_pl1_plus_p_norm * k_p)**2                 # Term 10
-        Geo += 1 / k_p**4                                       # Term 11
+        Geo += 1 / k_pl1_plus_p_norm**4                         # Term 11
         Geo *= pzsquare * self.bv_of_z[zi]**2
         
         dCl = dCl * Geo * pp
@@ -252,7 +252,7 @@ class Cl_kSZ2_HI2():
         Geo  = 1 / (k_pl_plus_p_norm  * k_p)**2                 # Term 5
         Geo -= 1 / (k_pl1_plus_p_norm * k_pl_plus_p_norm)**2    # Term 9
         Geo -= 1 / (k_pl1_plus_p_norm * k_p)**2                 # Term 10
-        Geo += 1 / k_p**4                                       # Term 11
+        Geo += 1 / k_pl1_plus_p_norm**4                         # Term 11
         Geo *= pzsquare * self.bv_of_z[zi]**2
         
         dCl = dCl * Geo * pp
