@@ -261,7 +261,7 @@ class Cl_kSZ2_HI2():
         dC8 = tc.trapz(tc.trapz(tc.trapz(dCl * T8, tp_list, dim=-1), pp_list, dim=-1), pz_list, dim=-1)
         return dC6, dC7, dC8
 
-    def dCl_HI2(self, zi, l, l_min = 190, l_mid = None, l_max = None, Nkz = 51, N_l = 500, N_mu = 81, beam=True, noise = 0., RSD=True):
+    def dCl_HI2(self, zi, l, l_min = 190, l_mid = None, l_max = None, Nkz = 51, N_l = 500, N_mu = 81, noise = 0., RSD=True):
         '''
             We denote k_perp^prime as kk, theta_kk as the angle
             k = l / chi, theta_k = 0
@@ -293,7 +293,7 @@ class Cl_kSZ2_HI2():
         if RSD:
             dCl *= self.Power_matter_1d(tc.sqrt(kk**2 + kz**2), zi)*self.Beam_HI(kk*chi,zi)**2 * (1 + self.f_of_z[zi] * kz**2 / (kk**2 + kz**2) )**2 + Pnoise
             dCl *= self.Power_matter_1d(tc.sqrt(k_m_kk_norm**2 + kz**2), zi)*self.Beam_HI(k_m_kk_norm*chi,zi)**2 * (1 + self.f_of_z[zi] * kz**2 / (k_m_kk_norm**2 + kz**2) )**2 + Pnoise
-            
+
         else:
             dCl *= self.Power_matter_1d(tc.sqrt(kk**2 + kz**2), zi)*self.Beam_HI(kk*chi,zi)**2 + Pnoise
             dCl *= self.Power_matter_1d(tc.sqrt(k_m_kk_norm**2 + kz**2), zi)*self.Beam_HI(k_m_kk_norm*chi,zi)**2 + Pnoise
