@@ -22,8 +22,8 @@ l1_list = tc.linspace(100, 10000, 34)
 
 
 def compute(zindex, l, l1, t1):
-    res = dCl_obj.dCl_Term(zindex, l, l1, t1)
-    return res
+    dC6, dC7, dC8 = dCl_obj.dCl_Term_by_Term(zindex, l, l1, t1)
+    return dC6, dC7, dC8
 
 
 N_JOBS = 4
@@ -49,15 +49,15 @@ for zindex in range(zstart, zend):
         chi = dCl_obj.chi_of_z[zindex]
 
         if do_parallel:
-            res_i_p = Parallel(n_jobs=N_JOBS, prefer='threads')(
+            respack = Parallel(n_jobs=N_JOBS, prefer='threads')(
                 delayed(compute)(zindex, l, l1, t1) 
                     for t1 in t1_list)
-            res_zi.append(res_i_p)
+            res_zi.append(respack)
 
         else:
             for t1 in t1_list:
-                res_i = compute(zindex, l, l1, t1)
-                res_zi.append(res_i)
+                dC6, dC7, dC8 = compute(zindex, l, l1, t1)
+                res_zi.append([dC6, dC7, dC8])
 
         time_i = time.time() - time0
         total_index = (zindex - zstart) * length_p + i
@@ -67,6 +67,6 @@ for zindex in range(zstart, zend):
             '    ', end='\r')
     
     print(' ')
-    res_w = tc.tensor(res_zi).reshape([len(l_list), len(l1_list), len(t1_list)])
+    res_w = tc.tensor(res_zi).reshape([len(l_list), len(l1_list), len(t1_list), 3])
     print('saving data...')
     np.save('testdata/z_' + zmin_text + '_' + zmax_text + f'/dCl_cross_{zindex}.npy', res_w)
