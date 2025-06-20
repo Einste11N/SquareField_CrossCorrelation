@@ -261,7 +261,297 @@ class Cl_kSZ2_HI2():
         dC8 = tc.trapz(tc.trapz(tc.trapz(dCl * T8, tp_list, dim=-1), pp_list, dim=-1), pz_list, dim=-1)
         return dC6, dC7, dC8
 
-    def dCl_HI2(self, zi, l, l_min = 190, l_mid = None, l_max = None, Nkz = 51, N_l = 500, N_mu = 81, noise = 0., RSD=True):
+    
+    def dCl_Term_6_8(self, zi, l, l1, t1, Npz = 51, Npp = 1000, N_theta = 51, RSD=True, Beam=False):
+        '''
+        Integrand for Term 5, 9, 10, 11, over convolution space p = p_perp + p_z zhat
+        Assumming both bias for electron and for HI are equal to 1, b_v(k)=aHf b_e / k
+        '''
+        chi = self.chi_of_z[zi]
+        pl = tc.tensor([l / chi])
+        pl1 = tc.tensor([l1 / chi])
+        t1 = tc.tensor([t1])
+
+        # Make the mesh grid for pz, p_perp and theta_p
+        pz_list = 10.**tc.linspace(-2, 1, Npz)
+        pp_list = tc.hstack([(10**tc.arange(-7, -2, 0.01))[:-1], tc.linspace(1e-2, 10, Npp)])
+        tp_list = tc.linspace(0, 2*tc.pi, N_theta)
+        pz, pp, tp = tc.meshgrid(pz_list, pp_list, tp_list, indexing='ij')
+
+        # Pre-define useful varibales and constants
+        plsquare = pl**2
+        pl1square = pl1**2
+        ppsquare = pp**2
+        pzsquare = pz**2
+
+        pl_dot_pp = Polar_dot(pl, 0., pp, tp)
+        pl1_dot_pp = Polar_dot(pl1, t1, pp, tp)
+
+        # Pre-Evaluate the k modes
+        k_pl_plus_p_norm  = tc.sqrt( plsquare  + ppsquare + 2*pl_dot_pp  + pzsquare )
+        k_pl1_plus_p_norm = tc.sqrt( pl1square + ppsquare + 2*pl1_dot_pp + pzsquare )
+        k_p = tc.sqrt( ppsquare + pzsquare )
+
+        # Calculate the matter power spectrum
+        P_pl_plus_p_norm  = self.Power_matter_1d(k_pl_plus_p_norm, zi)
+        P_pl1_plus_p_norm = self.Power_matter_1d(k_pl1_plus_p_norm, zi)
+        P_p = self.Power_matter_1d(k_p, zi)
+
+        ##################################################
+        # Evaluate the integrand
+        # Power sepctrum contribution
+        dCl = P_pl_plus_p_norm * P_pl1_plus_p_norm  * P_p
+        # Beam 
+        if Beam:
+            dCl = dCl * self.Beam_HI(pp*chi, zi) * self.Beam_HI(tc.sqrt(plsquare  + ppsquare + 2*pl_dot_pp)*chi, zi)
+        # Other factors
+        dCl = dCl * pp * pzsquare * self.bv_of_z[zi]**2
+        # RSD
+        if RSD: 
+            dCl = dCl * (1 + self.f_of_z[zi] * pzsquare / k_pl_plus_p_norm**2) * (1 + self.f_of_z[zi] * 1 / (1 + ppsquare/pzsquare) )
+
+        # Geometric factor
+        T6 = 1 / (k_pl_plus_p_norm  * k_p)**2       # Term 6
+        # T7 = 1 / k_pl1_plus_p_norm**4               # Term 7
+        T8 = -1 / (k_pl1_plus_p_norm * k_p)**2      # Term 8
+
+        # Delete redundant variables to save memory
+        del(k_pl_plus_p_norm, k_pl1_plus_p_norm, k_p)
+        ##################################################
+        # Integrate over p space
+        dC6 = tc.trapz(tc.trapz(tc.trapz(dCl * T6, tp_list, dim=-1), pp_list, dim=-1), pz_list, dim=-1)
+        # dC7 = tc.trapz(tc.trapz(tc.trapz(dCl * T7, tp_list, dim=-1), pp_list, dim=-1), pz_list, dim=-1)
+        dC8 = tc.trapz(tc.trapz(tc.trapz(dCl * T8, tp_list, dim=-1), pp_list, dim=-1), pz_list, dim=-1)
+        return dC6, dC8
+
+    def Pvv_term7(self, zi, l, l1, t1, Npz=51, Npp = 500, N_theta = 51, RSD=True, Beam=False):
+        '''
+        Integrand Pvv as a function of |l1/chi + p|
+        Redefine p_plus = l1/chi + p, which is our p in final integral
+        PeHI(|l/chi + p|)  -> PeHI(|l/chi + pplus - l1/chi|)
+        PeHI(|p|)     -> PeHI(|pplus - l1/chi|)
+        Pvv(|l1/chi + p|)  -> Pvv(|pplus|)
+        '''
+        chi = self.chi_of_z[zi]
+        pl = tc.tensor([l / chi])
+        pl1 = tc.tensor([l1 / chi])
+        t1 = tc.tensor([t1])
+
+        pz_list = 10.**tc.linspace(-4, 2, Npz)
+        pp_list = tc.hstack([(10**tc.arange(-7, -2, 0.01))[:-1], 10**tc.linspace(-2, 2, Npp)])
+        tp_list = tc.linspace(0, 2*tc.pi, N_theta)
+        pz, pp, tp = tc.meshgrid(pz_list, pp_list, tp_list, indexing='ij')
+
+        # Pre-define useful varibales and constants
+        plsquare = pl**2
+        pl1square = pl1**2
+        ppsquare = pp**2
+        pzsquare = pz**2
+
+        pl_dot_l1 = Polar_dot(pl, 0., pl1, t1)
+        pl_dot_pp = Polar_dot(pl, 0., pp, tp)
+        pl1_dot_pp = Polar_dot(pl1, t1, pp, tp)
+
+        # Pre-Evaluate the k modes
+        k_l_minus_l1_plus_p_norm  = tc.sqrt( pzsquare + plsquare + pl1square + ppsquare + 2*pl_dot_pp - 2*pl_dot_l1 - 2*pl1_dot_pp)
+        k_p_minus_l1_norm = tc.sqrt( pzsquare + pl1square + ppsquare - 2*pl1_dot_pp)
+        k_p = tc.sqrt(ppsquare + pzsquare)
+
+        # Calculate the matter power spectrum
+        P_eHI1 = self.Power_matter_1d(k_l_minus_l1_plus_p_norm, zi)
+        P_eHI2 = self.Power_matter_1d(k_p_minus_l1_norm, zi)
+        P_vv = self.Power_matter_1d(k_p, zi)
+
+        ##################################################
+        # Evaluate the integrand
+        # Power sepctrum contribution
+        dCl = P_eHI1 * P_eHI2 * P_vv
+        dCl_term7 = P_vv
+
+        # Beam 
+        if Beam:
+            beam1_parameter = tc.sqrt(plsquare + pl1square + ppsquare + 2*pl_dot_pp - 2*pl_dot_l1 - 2*pl1_dot_pp) * chi
+            beam2_parameter = tc.sqrt(pl1square + ppsquare - 2*pl1_dot_pp) * chi
+            dCl = dCl * self.Beam_HI(beam1_parameter, zi) * self.Beam_HI(beam2_parameter, zi)
+
+        # Other factors
+        dCl = dCl *  pp * self.bv_of_z[zi]**2
+        dCl_term7 = dCl_term7 * pp * self.bv_of_z[zi]**2 # in order to evaluate vrms
+
+        # RSD
+        if RSD: 
+            dCl = dCl * (1 + self.f_of_z[zi] * pzsquare / k_l_minus_l1_plus_p_norm**2) * (1 + self.f_of_z[zi] * pzsquare / k_p_minus_l1_norm**2 )
+            dCl_term7 = dCl_term7 * (1 + self.f_of_z[zi] * pzsquare / k_l_minus_l1_plus_p_norm**2) * (1 + self.f_of_z[zi] * pzsquare / k_p_minus_l1_norm**2 )
+
+        # Geometric factor
+        T7 = pzsquare / k_p**4      # Term 7
+
+        ##################################################
+        # Integrate over p space
+        dC7 = tc.trapz(tc.trapz(tc.trapz(dCl * T7, tp_list, dim=-1), pp_list, dim=-1), pz_list, dim=-1)
+        vrms2_by_3 = tc.trapz(tc.trapz(tc.trapz(dCl_term7 * T7, tp_list, dim=-1), pp_list, dim=-1), pz_list, dim=-1)
+
+        ##################################################
+        k_l_minus_l1 = tc.sqrt( pl1square + plsquare - 2*pl_dot_l1)
+        PeHI_1 = self.Power_matter_1d(k_l_minus_l1, zi)
+        PeHI_2 = self.Power_matter_1d(pl1, zi)
+        PeHI = PeHI_1 * PeHI_2
+
+        return dC7, vrms2_by_3*PeHI # , pz, pp, dCl * T7, dCl_term7 * T7
+
+
+
+    def dCl_Term_by_Term_test(self, zi, l, l1, t1, Npz = 51, Npp = 1000, N_theta = 51, log_sampling=False, Beam=True, RSD=True, dim=2, default_pz=1e-2, debug=True, resprint=True):
+        '''
+        Integrand for Term 5, 9, 10, 11, over convolution space p = p_perp + p_z zhat
+        Assumming both bias for electron and for HI are equal to 1, b_v(k)=aHf b_e / k
+        '''
+        chi = self.chi_of_z[zi]
+        pl = tc.tensor([l / chi])
+        pl1 = tc.tensor([l1 / chi])
+        t1 = tc.tensor([t1])
+
+        if dim==2:
+            pz = tc.tensor([default_pz])
+            if log_sampling:
+                pp_list = tc.hstack([(10**tc.arange(-7, -3, 0.1))[:-1], 10**tc.linspace(-3, 1, Npp)])
+            else:
+                pp_list = tc.hstack([(10**tc.arange(-7, -3, 0.1))[:-1], tc.linspace(1e-3, 10, Npp)])
+            tp_list = tc.linspace(0, 2*tc.pi, N_theta)
+            pp, tp = tc.meshgrid(pp_list, tp_list, indexing='ij')
+        elif dim==3:
+            # Make the mesh grid for pz, p_perp and theta_p
+            pz_list = 10.**tc.linspace(-4, 0, Npz)
+            pp_list = tc.hstack([(10**tc.arange(-7, -3, 0.1))[:-1], 10**tc.linspace(-3, 1, Npp)])
+            tp_list = tc.linspace(0, 2*tc.pi, N_theta)
+            pz, pp, tp = tc.meshgrid(pz_list, pp_list, tp_list, indexing='ij')
+
+        # Pre-define useful varibales and constants
+        plsquare = pl**2
+        pl1square = pl1**2
+        ppsquare = pp**2
+        pzsquare = pz**2
+
+        pl_dot_pp = Polar_dot(pl, 0., pp, tp)
+        pl1_dot_pp = Polar_dot(pl1, t1, pp, tp)
+
+        # Pre-Evaluate the k modes
+        k_pl_plus_p_norm  = tc.sqrt( plsquare  + ppsquare + 2*pl_dot_pp  + pzsquare )
+        k_pl1_plus_p_norm = tc.sqrt( pl1square + ppsquare + 2*pl1_dot_pp + pzsquare )
+        k_p = tc.sqrt( ppsquare + pzsquare )
+
+        # Calculate the matter power spectrum
+        P_pl_plus_p_norm  = self.Power_matter_1d(k_pl_plus_p_norm, zi)
+        P_pl1_plus_p_norm = self.Power_matter_1d(k_pl1_plus_p_norm, zi)
+        P_p = self.Power_matter_1d(k_p, zi)
+
+        ##################################################
+        # Evaluate the integrand
+        # Power sepctrum contribution
+        dCl = P_pl_plus_p_norm * P_pl1_plus_p_norm  * P_p
+        # Beam
+        if Beam:
+            dCl = dCl * self.Beam_HI(pp*chi, zi) * self.Beam_HI(tc.sqrt(plsquare  + ppsquare + 2*pl_dot_pp)*chi, zi)
+        # Other factors
+        dCl = dCl *  pp * pzsquare * self.bv_of_z[zi]**2
+        # RSD
+        if RSD: dCl = dCl * (1 + self.f_of_z[zi] * pzsquare / k_pl_plus_p_norm**2) * (1 + self.f_of_z[zi] * 1 / (1 + ppsquare/pzsquare) )
+
+        # Geometric factor
+        T6 = 1 / (k_pl_plus_p_norm  * k_p)**2       # Term 6
+        T7 = 1 / k_pl1_plus_p_norm**4               # Term 7
+        T8 = -1 / (k_pl1_plus_p_norm * k_p)**2      # Term 8
+
+        # Delete redundant variables to save memory
+        del(k_pl_plus_p_norm, k_pl1_plus_p_norm, k_p)
+        ##################################################
+        # Integrate over p space
+        if dim==2:
+            dC6 = tc.trapz(tc.trapz(dCl * T6, tp_list, dim=-1), pp_list, dim=-1)
+            dC7 = tc.trapz(tc.trapz(dCl * T7, tp_list, dim=-1), pp_list, dim=-1)
+            dC8 = tc.trapz(tc.trapz(dCl * T8, tp_list, dim=-1), pp_list, dim=-1)
+        elif dim==3:
+            dC6 = tc.trapz(tc.trapz(tc.trapz(dCl * T6, tp_list, dim=-1), pp_list, dim=-1), pz_list, dim=-1)
+            dC7 = tc.trapz(tc.trapz(tc.trapz(dCl * T7, tp_list, dim=-1), pp_list, dim=-1), pz_list, dim=-1)
+            dC8 = tc.trapz(tc.trapz(tc.trapz(dCl * T8, tp_list, dim=-1), pp_list, dim=-1), pz_list, dim=-1)
+        
+        if debug:
+            if resprint: print(dC6, dC7, dC8)
+            return pp, tp, dCl * T6, dCl * T7, dCl * T8, P_pl_plus_p_norm, P_pl1_plus_p_norm, P_p, dCl, T6, T7, T8
+        else:
+            return dC6, dC7, dC8
+
+    def Pvv_term7_test(self, zi, l, l1, t1, Npz=51, Npp = 1000, N_theta = 51, log_sampling=False, resprint=True):
+        '''
+        Integrand Pvv as a function of |l1/chi + p|
+        Redefine p_plus = l1/chi + p, which is our p in final integral
+        PeHI(|l/chi + p|)  -> PeHI(|l/chi + pplus - l1/chi|)
+        PeHI(|p|)     -> PeHI(|pplus - l1/chi|)
+        Pvv(|l1/chi + p|)  -> Pvv(|pplus|)
+        '''
+        chi = self.chi_of_z[zi]
+        pl = tc.tensor([l / chi])
+        pl1 = tc.tensor([l1 / chi])
+        t1 = tc.tensor([t1])
+
+        pz_list = 10.**tc.linspace(-4, 0, Npz)
+        if log_sampling:
+            pp_list = tc.hstack([(10**tc.arange(-7, -3, 0.01))[:-1], 10**tc.linspace(-3, 1, Npp)])
+        else:
+            pp_list = tc.hstack([(10**tc.arange(-7, -3, 0.01))[:-1], tc.linspace(1e-3, 10, Npp)])
+        tp_list = tc.linspace(0, 2*tc.pi, N_theta)
+        pz, pp, tp = tc.meshgrid(pz_list, pp_list, tp_list, indexing='ij')
+
+        # Pre-define useful varibales and constants
+        plsquare = pl**2
+        pl1square = pl1**2
+        ppsquare = pp**2
+        pzsquare = pz**2
+
+        pl_dot_l1 = Polar_dot(pl, 0., pl1, t1)
+        pl_dot_pp = Polar_dot(pl, 0., pp, tp)
+        pl1_dot_pp = Polar_dot(pl1, t1, pp, tp)
+
+        # Pre-Evaluate the k modes
+        k_l_minus_l1_plus_p_norm  = tc.sqrt( pzsquare + plsquare + pl1square + ppsquare + 2*pl_dot_pp - 2*pl_dot_l1 - 2*pl1_dot_pp)
+        k_p_minus_l1_norm = tc.sqrt( pzsquare + pl1square + ppsquare - 2*pl1_dot_pp)
+        k_p = tc.sqrt(ppsquare + pzsquare)
+
+        # Calculate the matter power spectrum
+        P_eHI1 = self.Power_matter_1d(k_l_minus_l1_plus_p_norm, zi)
+        P_eHI2 = self.Power_matter_1d(k_p_minus_l1_norm, zi)
+        P_vv = self.Power_matter_1d(k_p, zi)
+
+        ##################################################
+        # Evaluate the integrand
+        # Power sepctrum contribution
+        dCl = P_eHI1 * P_eHI2 * P_vv
+        dCl_term7 = P_vv
+
+        # Other factors
+        dCl = dCl *  pp * self.bv_of_z[zi]**2
+        dCl_term7 = dCl_term7 * pp * self.bv_of_z[zi]**2 # in order to evaluate vrms
+
+        # Geometric factor
+        T7 = pzsquare / k_p**4               # Term 7
+
+        ##################################################
+        # Integrate over p space
+        dC7 = tc.trapz(tc.trapz(tc.trapz(dCl * T7, tp_list, dim=-1), pp_list, dim=-1), pz_list, dim=-1)
+        vrms2_by_3 = tc.trapz(tc.trapz(tc.trapz(dCl_term7 * T7, tp_list, dim=-1), pp_list, dim=-1), pz_list, dim=-1)
+
+        ##################################################
+        k_l_minus_l1 = tc.sqrt( pl1square + plsquare - 2*pl_dot_l1)
+        PeHI_1 = self.Power_matter_1d(k_l_minus_l1, zi)
+        PeHI_2 = self.Power_matter_1d(pl1, zi)
+        PeHI = PeHI_1 * PeHI_2
+
+
+        if resprint: print(dC7, vrms2_by_3*PeHI, dC7/(vrms2_by_3*PeHI), vrms2_by_3, PeHI)
+        return pp, tp, dCl * T7, dCl_term7 * T7, vrms2_by_3, PeHI
+
+
+    def dCl_HI2(self, zi, l, l_min = 190, l_mid = None, l_max = None, lgkzmin=-4, Nkz = 51, N_l = 500, N_mu = 81, noise = 0., RSD=True):
         '''
             We denote k_perp^prime as kk, theta_kk as the angle
             k = l / chi, theta_k = 0
@@ -274,7 +564,7 @@ class Cl_kSZ2_HI2():
         if l_mid is None : l_mid = 2 * np.max([300., l])
         if l_max is None : l_max = 100. * chi
 
-        kz_list = 10.**tc.linspace(-4, 1, Nkz)
+        kz_list = 10.**tc.linspace(lgkzmin, 1, Nkz)
         kk_list = tc.hstack([tc.linspace(1e-4, 1, 11)[:-1], 
                             tc.linspace(1, l_min, 191)[:-1],
                             tc.linspace(l_min, l_mid, N_l)[:-1],
