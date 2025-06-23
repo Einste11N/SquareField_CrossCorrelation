@@ -1,5 +1,7 @@
 import torch as tc
 tc.set_default_dtype(tc.float64)
+DEFAULT_DEVICE = 'cuda'
+tc.set_default_device(DEFAULT_DEVICE)
 
 import numpy as np
 import scipy.constants as sc
@@ -23,15 +25,15 @@ class Cl_kSZ2_HI2():
         # Define the cosmological parameters
         params = camb.CAMBparams()
         params.set_cosmology(H0=H0, ombh2=ombh2)
-        params.set_matter_power(redshifts = z_array, kmax=10, nonlinear=True)
+        params.set_matter_power(redshifts = z_array.to('cpu'), kmax=10, nonlinear=True)
         results = camb.get_results(params)
         backgrounds = camb.get_background(params)
 
         # Calculate the background evolution and results
         kh, z, Pm = results.get_matter_power_spectrum(minkh=1e-4, maxkh=100, npoints = 350, var1='delta_tot', var2='delta_tot')
-        Xe_of_z = np.array(backgrounds.get_background_redshift_evolution(z_array, ['x_e'], format='array')).flatten()
+        Xe_of_z = np.array(backgrounds.get_background_redshift_evolution(z_array.to('cpu'), ['x_e'], format='array')).flatten()
         f_of_z = np.array(backgrounds.get_redshift_evolution([0.01], z, ['growth'])).flatten()
-        chi_of_z = np.array(results.comoving_radial_distance(z_array))
+        chi_of_z = np.array(results.comoving_radial_distance(z_array.to('cpu')))
 
         ##################################################
         # Store the variables that we are interested in
@@ -96,7 +98,8 @@ class Cl_kSZ2_HI2():
         self.theta_FWHM = tc.tensor([theta])
 
     def evaluate_tau(self, H0, ombh2):
-        obj = Cl_kSZ2(zmax=self.z_array[-1], Nz=40, H0=H0, ombh2=ombh2)
+        zmax = self.z_list[-1]
+        obj = Cl_kSZ2(zmax=zmax, Nz=40, H0=H0, ombh2=ombh2)
         tau = torch_interp1d(obj.z_array, obj.tau_of_z, self.z_array)
         return tau
 
@@ -117,7 +120,7 @@ class Cl_kSZ2_HI2():
         return k_tot, Pm_tot
 
     def Power_matter_1d(self, kh, zindex, ir_cut = 1.e-8, uv_cut = 1.e4):
-        itp = 10.**torch_interp1d(tc.log10(self.kh_array_itp), tc.log10((self.Pm_itp)[zindex]), tc.log10(kh))
+        itp = 10.**torch_interp1d(tc.log10(self.kh_array_itp), tc.log10((self.Pm_itp)[zindex]), tc.log10(kh).to(DEFAULT_DEVICE))
         power = tc.where(tc.logical_and(kh>ir_cut, kh<uv_cut), itp, 0.)
         return power
 
@@ -203,20 +206,20 @@ class Cl_kSZ2_HI2():
         dCl_res = tc.trapz(tc.trapz(tc.trapz(dCl, tp_list, dim=-1), pp_list, dim=-1), pz_list, dim=-1)
         return dCl_res
     
-    def dCl_Term_by_Term(self, zi, l, l1, t1, Npz = 51, Npp = 1000, N_theta = 51, RSD=True):
+    def dCl_Term_by_Term(self, zi, l, l1, t1, Npz = 81, Npp = 500, N_theta = 61, RSD=True, Beam=True):
         '''
         Integrand for Term 5, 9, 10, 11, over convolution space p = p_perp + p_z zhat
         Assumming both bias for electron and for HI are equal to 1, b_v(k)=aHf b_e / k
         '''
-        chi = self.chi_of_z[zi]
-        pl = tc.tensor([l / chi])
-        pl1 = tc.tensor([l1 / chi])
-        t1 = tc.tensor([t1])
+        chi = self.chi_of_z.to(DEFAULT_DEVICE)[zi]
+        pl = tc.tensor([l / chi], device=DEFAULT_DEVICE)
+        pl1 = tc.tensor([l1 / chi], device=DEFAULT_DEVICE)
+        t1 = tc.tensor([t1], device=DEFAULT_DEVICE)
 
         # Make the mesh grid for pz, p_perp and theta_p
-        pz_list = 10.**tc.linspace(-4, 0, Npz)
-        pp_list = tc.hstack([(10**tc.arange(-7, -3, 0.1))[:-1], tc.linspace(1e-3, 1, Npp)])
-        tp_list = tc.linspace(0, 2*tc.pi, N_theta)
+        pz_list = 10.**tc.linspace(-6, 2, Npz, device=DEFAULT_DEVICE)
+        pp_list = tc.hstack([(10**tc.arange(-7, -2, 0.01))[:-1], 10**tc.linspace(-2, 2, Npp)]).to(DEFAULT_DEVICE)
+        tp_list = tc.linspace(0, 2*tc.pi, N_theta, device=DEFAULT_DEVICE)
         pz, pp, tp = tc.meshgrid(pz_list, pp_list, tp_list, indexing='ij')
 
         # Pre-define useful varibales and constants
@@ -243,7 +246,9 @@ class Cl_kSZ2_HI2():
         # Power sepctrum contribution
         dCl = P_pl_plus_p_norm * P_pl1_plus_p_norm  * P_p
         # Beam and other factors
-        dCl = dCl * self.Beam_HI(pp*chi, zi) * self.Beam_HI(tc.sqrt(plsquare  + ppsquare + 2*pl_dot_pp)*chi, zi) * pp * pzsquare * self.bv_of_z[zi]**2
+        if Beam:
+            dCl = dCl * self.Beam_HI(pp*chi, zi) * self.Beam_HI(tc.sqrt(plsquare  + ppsquare + 2*pl_dot_pp)*chi, zi)
+        dCl = dCl * pp * pzsquare * self.bv_of_z[zi]**2
         # RSD
         if RSD: dCl = dCl * (1 + self.f_of_z[zi] * pzsquare / k_pl_plus_p_norm**2) * (1 + self.f_of_z[zi] * 1 / (1 + ppsquare/pzsquare) )
 
@@ -261,70 +266,7 @@ class Cl_kSZ2_HI2():
         dC8 = tc.trapz(tc.trapz(tc.trapz(dCl * T8, tp_list, dim=-1), pp_list, dim=-1), pz_list, dim=-1)
         return dC6, dC7, dC8
 
-    
-    def dCl_Term_6_8(self, zi, l, l1, t1, Npz = 51, Npp = 1000, N_theta = 51, RSD=True, Beam=False):
-        '''
-        Integrand for Term 5, 9, 10, 11, over convolution space p = p_perp + p_z zhat
-        Assumming both bias for electron and for HI are equal to 1, b_v(k)=aHf b_e / k
-        '''
-        chi = self.chi_of_z[zi]
-        pl = tc.tensor([l / chi])
-        pl1 = tc.tensor([l1 / chi])
-        t1 = tc.tensor([t1])
-
-        # Make the mesh grid for pz, p_perp and theta_p
-        pz_list = 10.**tc.linspace(-2, 1, Npz)
-        pp_list = tc.hstack([(10**tc.arange(-7, -2, 0.01))[:-1], tc.linspace(1e-2, 10, Npp)])
-        tp_list = tc.linspace(0, 2*tc.pi, N_theta)
-        pz, pp, tp = tc.meshgrid(pz_list, pp_list, tp_list, indexing='ij')
-
-        # Pre-define useful varibales and constants
-        plsquare = pl**2
-        pl1square = pl1**2
-        ppsquare = pp**2
-        pzsquare = pz**2
-
-        pl_dot_pp = Polar_dot(pl, 0., pp, tp)
-        pl1_dot_pp = Polar_dot(pl1, t1, pp, tp)
-
-        # Pre-Evaluate the k modes
-        k_pl_plus_p_norm  = tc.sqrt( plsquare  + ppsquare + 2*pl_dot_pp  + pzsquare )
-        k_pl1_plus_p_norm = tc.sqrt( pl1square + ppsquare + 2*pl1_dot_pp + pzsquare )
-        k_p = tc.sqrt( ppsquare + pzsquare )
-
-        # Calculate the matter power spectrum
-        P_pl_plus_p_norm  = self.Power_matter_1d(k_pl_plus_p_norm, zi)
-        P_pl1_plus_p_norm = self.Power_matter_1d(k_pl1_plus_p_norm, zi)
-        P_p = self.Power_matter_1d(k_p, zi)
-
-        ##################################################
-        # Evaluate the integrand
-        # Power sepctrum contribution
-        dCl = P_pl_plus_p_norm * P_pl1_plus_p_norm  * P_p
-        # Beam 
-        if Beam:
-            dCl = dCl * self.Beam_HI(pp*chi, zi) * self.Beam_HI(tc.sqrt(plsquare  + ppsquare + 2*pl_dot_pp)*chi, zi)
-        # Other factors
-        dCl = dCl * pp * pzsquare * self.bv_of_z[zi]**2
-        # RSD
-        if RSD: 
-            dCl = dCl * (1 + self.f_of_z[zi] * pzsquare / k_pl_plus_p_norm**2) * (1 + self.f_of_z[zi] * 1 / (1 + ppsquare/pzsquare) )
-
-        # Geometric factor
-        T6 = 1 / (k_pl_plus_p_norm  * k_p)**2       # Term 6
-        # T7 = 1 / k_pl1_plus_p_norm**4               # Term 7
-        T8 = -1 / (k_pl1_plus_p_norm * k_p)**2      # Term 8
-
-        # Delete redundant variables to save memory
-        del(k_pl_plus_p_norm, k_pl1_plus_p_norm, k_p)
-        ##################################################
-        # Integrate over p space
-        dC6 = tc.trapz(tc.trapz(tc.trapz(dCl * T6, tp_list, dim=-1), pp_list, dim=-1), pz_list, dim=-1)
-        # dC7 = tc.trapz(tc.trapz(tc.trapz(dCl * T7, tp_list, dim=-1), pp_list, dim=-1), pz_list, dim=-1)
-        dC8 = tc.trapz(tc.trapz(tc.trapz(dCl * T8, tp_list, dim=-1), pp_list, dim=-1), pz_list, dim=-1)
-        return dC6, dC8
-
-    def Pvv_term7(self, zi, l, l1, t1, Npz=51, Npp = 500, N_theta = 51, RSD=True, Beam=False):
+    def Pvv_term7(self, zi, l, l1, t1, Npz=81, Npp = 500, N_theta = 61, RSD=True, Beam=False):
         '''
         Integrand Pvv as a function of |l1/chi + p|
         Redefine p_plus = l1/chi + p, which is our p in final integral
@@ -332,14 +274,14 @@ class Cl_kSZ2_HI2():
         PeHI(|p|)     -> PeHI(|pplus - l1/chi|)
         Pvv(|l1/chi + p|)  -> Pvv(|pplus|)
         '''
-        chi = self.chi_of_z[zi]
-        pl = tc.tensor([l / chi])
-        pl1 = tc.tensor([l1 / chi])
-        t1 = tc.tensor([t1])
+        chi = self.chi_of_z.to(DEFAULT_DEVICE)[zi]
+        pl = tc.tensor([l / chi], device=DEFAULT_DEVICE)
+        pl1 = tc.tensor([l1 / chi], device=DEFAULT_DEVICE)
+        t1 = tc.tensor([t1], device=DEFAULT_DEVICE)
 
-        pz_list = 10.**tc.linspace(-4, 2, Npz)
-        pp_list = tc.hstack([(10**tc.arange(-7, -2, 0.01))[:-1], 10**tc.linspace(-2, 2, Npp)])
-        tp_list = tc.linspace(0, 2*tc.pi, N_theta)
+        pz_list = 10.**tc.linspace(-6, 2, Npz, device=DEFAULT_DEVICE)
+        pp_list = tc.hstack([(10**tc.arange(-7, -2, 0.01))[:-1], 10**tc.linspace(-2, 2, Npp)]).to(DEFAULT_DEVICE)
+        tp_list = tc.linspace(0, 2*tc.pi, N_theta, device=DEFAULT_DEVICE)
         pz, pp, tp = tc.meshgrid(pz_list, pp_list, tp_list, indexing='ij')
 
         # Pre-define useful varibales and constants
@@ -375,7 +317,7 @@ class Cl_kSZ2_HI2():
             dCl = dCl * self.Beam_HI(beam1_parameter, zi) * self.Beam_HI(beam2_parameter, zi)
 
         # Other factors
-        dCl = dCl *  pp * self.bv_of_z[zi]**2
+        dCl = dCl * pp * self.bv_of_z[zi]**2
         dCl_term7 = dCl_term7 * pp * self.bv_of_z[zi]**2 # in order to evaluate vrms
 
         # RSD
@@ -453,12 +395,12 @@ class Cl_kSZ2_HI2():
         if Beam:
             dCl = dCl * self.Beam_HI(pp*chi, zi) * self.Beam_HI(tc.sqrt(plsquare  + ppsquare + 2*pl_dot_pp)*chi, zi)
         # Other factors
-        dCl = dCl *  pp * pzsquare * self.bv_of_z[zi]**2
+        dCl = dCl * pp * pzsquare * self.bv_of_z[zi]**2
         # RSD
         if RSD: dCl = dCl * (1 + self.f_of_z[zi] * pzsquare / k_pl_plus_p_norm**2) * (1 + self.f_of_z[zi] * 1 / (1 + ppsquare/pzsquare) )
 
         # Geometric factor
-        T6 = 1 / (k_pl_plus_p_norm  * k_p)**2       # Term 6
+        T6 = 1 / (k_pl_plus_p_norm * k_p)**2       # Term 6
         T7 = 1 / k_pl1_plus_p_norm**4               # Term 7
         T8 = -1 / (k_pl1_plus_p_norm * k_p)**2      # Term 8
 
@@ -601,15 +543,15 @@ class Cl_kSZ2():
         z_array = tc.tensor(np.hstack([np.geomspace(zmin, 0.1, 10)[:-1], np.linspace(0.1, zmax, Nz, endpoint=True)]))
         params = camb.CAMBparams()
         params.set_cosmology(H0=H0, ombh2=ombh2)
-        params.set_matter_power(redshifts = z_array, kmax=10, nonlinear=nonlinear)
+        params.set_matter_power(redshifts = z_array.to('cpu'), kmax=10, nonlinear=nonlinear)
         results = camb.get_results(params)
         backgrounds = camb.get_background(params)
 
         # Calculate the background evolution and results
         kh, z, Pm = results.get_matter_power_spectrum(minkh=1e-4, maxkh=100, npoints = 350, var1='delta_tot', var2='delta_tot')
-        Xe_of_z = np.array(backgrounds.get_background_redshift_evolution(z_array, ['x_e'], format='array')).flatten()
+        Xe_of_z = np.array(backgrounds.get_background_redshift_evolution(z_array.to('cpu'), ['x_e'], format='array')).flatten()
         f_of_z = np.array(backgrounds.get_redshift_evolution([0.01], z, ['growth'])).flatten()
-        chi_of_z = np.array(results.comoving_radial_distance(z_array))
+        chi_of_z = np.array(results.comoving_radial_distance(z_array.to('cpu')))
 
         ##################################################
         # Store the variables that we are interested in
@@ -794,7 +736,7 @@ class Cl_kSZ2():
 
 
 def Polar_dot(lx, thetax, ly, thetay):
-    return lx * ly * np.cos(thetax - thetay)
+    return lx * ly * tc.cos(thetax - thetay)
 
 def Evaluate_angle(N_vec, *vectors):
 
