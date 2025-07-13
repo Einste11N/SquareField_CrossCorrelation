@@ -1,6 +1,6 @@
 import torch as tc
 tc.set_default_dtype(tc.float64)
-DEFAULT_DEVICE = 'cuda'
+DEFAULT_DEVICE = 'cpu'
 tc.set_default_device(DEFAULT_DEVICE)
 
 import numpy as np
