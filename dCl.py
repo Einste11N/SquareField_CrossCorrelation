@@ -19,7 +19,7 @@ NE = 5.13e-7  # in unit 1/Mpc
 
 class Cl_kSZ2_HI2():
 
-    def __init__(self, z_array, Tb = 1.8e-1, OmHIh = 2.45e-4, H0 = 67.75, ombh2 = 0.022, Filter_path = r'Data/Fl_and_l_kSZ.npy'):
+    def __init__(self, z_array, Tb = 1.89e-1, OmHI = 6.73e-4, H0 = 67.75, ombh2 = 0.022, Filter_path = r'Data/Fl_and_l_kSZ.npy'):
         
         ##################################################s
         # Define the cosmological parameters
@@ -62,7 +62,7 @@ class Cl_kSZ2_HI2():
         self.F_kSZ = self.visibility_of_z / self.chi_of_z**2                # F_kSZ, propto visibility function of kSZ
         
         # Redshift dependence of HI
-        self.Tb_of_z = Tb * OmHIh * (1+self.z_array)**2 * H0 / self.H_of_z  # HI brightness temperature, in unite K
+        self.Tb_of_z = Tb * OmHI * (1+self.z_array)**2 * H0 / self.H_of_z  # HI brightness temperature, in unite K * c (with c=3e5km/s)
         self.W_HI = self.Tb_of_z**2 / self.dchi_by_dz / (z[-1] - z[0])      # Window function of HI observation
         self.G_HI = self.W_HI / self.chi_of_z**2                            # G_HI, proptp window function of HI
         self.G_HI_auto = (self.W_HI / self.chi_of_z)**2                     # G_HI_auto for HI square field auto correlation
@@ -493,7 +493,7 @@ class Cl_kSZ2_HI2():
         return pp, tp, dCl * T7, dCl_term7 * T7, vrms2_by_3, PeHI
 
 
-    def dCl_HI2(self, zi, l, l_min = 190, l_mid = None, l_max = None, lgkzmin=-4, Nkz = 51, N_l = 500, N_mu = 81, noise = 0., RSD=True):
+    def dCl_HI2(self, zi, l, l_min = 150, l_mid = None, l_max = None, lgkzmin=-4, Nkz = 51, N_l = 200, N_mu = 81, noise = 0., RSD=True):
         '''
             We denote k_perp^prime as kk, theta_kk as the angle
             k = l / chi, theta_k = 0
@@ -503,8 +503,8 @@ class Cl_kSZ2_HI2():
         # Redefine the inputs as tc.tensors and make the meshgrid
         chi = self.chi_of_z[zi]
         k = tc.tensor([l]) / chi
-        if l_mid is None : l_mid = 2 * np.max([300., l])
-        if l_max is None : l_max = 100. * chi
+        if l_mid is None : l_mid = 250. # 0.67 * np.max([300., l])
+        if l_max is None : l_max = 0.3 * chi
 
         kz_list = 10.**tc.linspace(lgkzmin, 1, Nkz)
         kk_list = tc.hstack([tc.linspace(1e-4, 1, 11)[:-1], 
@@ -518,7 +518,7 @@ class Cl_kSZ2_HI2():
 
         ##################################################
         # Evaluation and Integral
-        Pnoise = noise / (1 + self.z_list[zi])**2 / self.Tb_of_z[zi]**2
+        Pnoise = noise / (1 + self.z_list[zi])**2 / self.Tb_of_z[zi]**2 * (sc.c/1000)**2 # in unit K^2 * c^2
 
         # factor 4=2*2*2 in the front for double of interal over kz and theta
         dCl = 4*kk  / (2*tc.pi)**3
