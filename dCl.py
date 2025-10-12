@@ -504,13 +504,14 @@ class Cl_kSZ2_HI2():
         chi = self.chi_of_z[zi]
         k = tc.tensor([l]) / chi
         if l_mid is None : l_mid = 250. # 0.67 * np.max([300., l])
-        if l_max is None : l_max = 0.3 * chi
+        if l_max is None : l_max = 600. # 1. * chi
 
-        kz_list = 10.**tc.linspace(lgkzmin, 1, Nkz)
+        kz_list = 10.**tc.linspace(lgkzmin, 0, Nkz)
         kk_list = tc.hstack([tc.linspace(1e-4, 1, 11)[:-1], 
                             tc.linspace(1, l_min, 191)[:-1],
                             tc.linspace(l_min, l_mid, N_l)[:-1],
-                            10**tc.linspace(np.log10(l_mid), np.log10(l_max), 50)]) / chi
+                            tc.linspace(l_mid, l_max, 50) #10**tc.linspace(np.log10(l_mid), np.log10(l_max), 50)
+                            ]) / chi
         theta_list = tc.linspace(0, tc.pi, N_mu)
 
         kz, kk, theta = tc.meshgrid(kz_list, kk_list, theta_list, indexing='ij')
